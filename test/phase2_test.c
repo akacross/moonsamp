@@ -58,16 +58,16 @@ typedef struct {
     uint16_t pp_largest, pp_used, pp_info, pp_local_id, pp_local_name, pp_local_obj, pp_local_ping;
     uint8_t info_remote, info_name, info_ping, remote_ped;
     uint32_t show, close, lb_sel, lb_select, eb_get, eb_set, shutdown, cursor, setname, special, td_set;
-    uint32_t vehicle_find;
+    uint32_t vehicle_find, player_color;
 } Layout;
 
 static const Layout layouts[] = {
     { 0xCC4D0, 0x26E8DC, 0x26E8C8, 0x26E8CC, 0x26E898, 0x26E8F4, 0x26E894,
       0x0000, 0x0FB4, 0x0004, 0x2F1C, 0x2F22, 0x2F3A, 0x2F14, 0x00, 0x0C, 0x04, 0x00,
-      0x6F8C0, 0x6FF40, 0x88760, 0x8A2E0, 0x84F40, 0x84E70, 0xA1E0, 0x9FFE0, 0xB5C0, 0x3340, 0xB26D0, 0x1E440 },
+      0x6F8C0, 0x6FF40, 0x88760, 0x8A2E0, 0x84F40, 0x84E70, 0xA1E0, 0x9FFE0, 0xB5C0, 0x3340, 0xB26D0, 0x1E440, 0xA6AF0 },
     { 0xFDB60, 0x2ACA24, 0x2ACA10, 0x2ACA14, 0x2AC9E0, 0x2ACA3C, 0x2AC9DC,
       0x0022, 0x0FD6, 0x0026, 0x0000, 0x0006, 0x001E, 0x2F36, 0x08, 0x14, 0x0C, 0x04,
-      0x6FA50, 0x700D0, 0x888F0, 0x8A470, 0x850D0, 0x85000, 0xA230, 0xA0530, 0xB5E0, 0x3390, 0xB2B60, 0x1E650 },
+      0x6FA50, 0x700D0, 0x888F0, 0x8A470, 0x850D0, 0x85000, 0xA230, 0xA0530, 0xB5E0, 0x3390, 0xB2B60, 0x1E650, 0xA6F70 },
 };
 
 #define AT(p, off, T) (*(T *)((uint8_t *)(p) + (off)))
@@ -95,6 +95,7 @@ static void THISCALL s_cursor(void *g, int mode, int hide) { rec(g, mode, hide);
 static void THISCALL s_setname(void *pp, const char *name) { rec(pp, 0, 0); strcpy(last.s[0], name); }
 static char THISCALL s_special(void *lp) { rec(lp, 0, 0); return 7; }
 static void THISCALL s_td_set(void *td, const char *t) { rec(td, 0, 0); strcpy(last.s[0], t); }
+static uint32_t __stdcall s_color(int id) { return id == 1 ? 0x11223300 : 0xAABBCCFF; }
 static uint8_t vehicles[3 * 0xA18];
 static uint16_t THISCALL s_vehicle_find(void *vp, void *car) { rec(vp, 0, 0); return car == vehicles + 0xA18 ? 12 : 0xFFFF; }
 
@@ -184,6 +185,7 @@ __declspec(dllexport) int run(void)
     jump(base, L->shutdown, s_shutdown); jump(base, L->cursor, s_cursor);
     jump(base, L->setname, s_setname);   jump(base, L->special, s_special);
     jump(base, L->td_set, s_td_set);     jump(base, L->vehicle_find, s_vehicle_find);
+    jump(base, L->player_color, s_color);
     *(void **)0xB74490 = &ped_pool;
     *(void **)0xB74494 = &vehicle_pool;
     *(int32_t *)0xC17044 = 1920;
@@ -283,6 +285,8 @@ __declspec(dllexport) int run(void)
     begin(); put_int(3); put_local(0); op(0x0B36);
     check(strcmp((const char *)(uintptr_t)LOCAL(0), "Me") == 0, "0B36 local nickname");
     check(op_cond(0x0B23, 1) == 1 && op_cond(0x0B23, 2) == 0, "0B23 connected");
+    check((uint32_t)op_int(0x0B37, 1) == 0x00112233 && (uint32_t)op_int(0x0B37, 4) == 0xFFAABBCC,
+          "0B37 RGBA -> ARGB keeps the alpha (0 hides a marker)");
     check(op_cond(0x0B46, 9) == 1 && op_cond(0x0B46, 8) == 0, "0B46 3D text defined");
     check(op_out(0x0BB5) == (int32_t)(uintptr_t)gz_pool, "0BB5 gangzone pool pointer");
     check(op_out(0x0BDC) == 2, "0BDC chat display mode");
@@ -311,8 +315,7 @@ __declspec(dllexport) int run(void)
         begin(); put_int(1 << 8 | 0x07); put_local(0); op(0x0B2C);
         check(COND == 1 && LOCAL(0) == 12 && last.self == gz_pool + 8, "0B2C car handle 0x107 -> vehicle 12");
         begin(); put_local(0); put_local(1); op(0x0B5A);
-        check(LOCAL(1) == 1920 && LOCAL(0) == 1080,
-              "0B5A height in local 0, width in local 1 (MoonLoader returns local 1, local 0)");
+        check(LOCAL(0) == 1920 && LOCAL(1) == 1080, "0B5A width in local 0, height in local 1");
         check(x87_tags() == before && before == 0xFFFF, "the x87 stack is still empty after them");
     }
 

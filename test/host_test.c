@@ -243,6 +243,31 @@ __declspec(dllexport) int run(void)
         check(got_obj == NULL, "0C62 then runs nothing");
     }
 
+    /* tracing must stay cheap however many scripts come and go: MoonLoader
+     * gives every lua_thread a script, and a full table once made every call
+     * scan all of it, stalling the game. Fill it, then time calls that miss. */
+    {
+        static uint8_t many[40000][0xE0];
+        Handler *table = *(Handler **)0x469FEE;
+        DWORD t0;
+        size_t i, j;
+        n = put_local0(0);
+        for (i = 0; i < 40000; i++)
+            *(uint8_t **)(many[i] + 0x10) = code;
+        for (i = 0; i < 20000; i++) {
+            *(uint8_t **)(many[i] + 0x14) = code;
+            table[0x0B4F / 100](many[i], 0x0B4F);
+        }
+        t0 = GetTickCount();
+        for (j = 0; j < 10; j++)
+            for (i = 20000; i < 40000; i++) {
+                *(uint8_t **)(many[i] + 0x14) = code;
+                many[i][0xC5] = (uint8_t)j;    /* a new answer: always a miss or a change */
+                table[0x0B4F / 100](many[i], 0x0B4F);
+            }
+        check(GetTickCount() - t0 < 500, "200000 traced calls on a full table stay fast");
+    }
+
     f = fopen("moonsamp.log", "rb");
     if (f) {
         size_t r = fread(log, 1, sizeof log - 1, f);

@@ -59,6 +59,7 @@ open(sys.argv[2], 'wb').write(d)
 PY
 }
 cd "$work"
+touch moonsamp.trace    # traced, as the user runs it: its bookkeeping is tested too
 status=0
 for t in host_test raknet_test phase2_test; do
     patch_exe "$t"

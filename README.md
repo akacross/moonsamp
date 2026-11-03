@@ -80,6 +80,14 @@ hook keeps its DialogResponse for sampHasDialogRespond instead of sending it.
 Any other opcode returns false and leaves `""` / 0 in its results, and is
 named once in `moonsamp.log`.
 
+## Diagnostics
+
+With a file named `moonsamp.trace` in the game folder, `moonsamp.log` also
+records each opcode's answer per script when it changes, SA-MP's own state
+behind the scripts' checks (chat box, dialog, scoreboard, cursor, spawned,
+gamestate), every command SA-MP runs, chat messages, and keyboard input
+reaching the game window with its focus. Delete the file to turn it off.
+
 ## Build and test
 
     ./build.sh          # -> moonsamp.asi (i686 mingw, no CRT)

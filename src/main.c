@@ -152,6 +152,9 @@ static void start(HMODULE self)
         ms_log("not GTA:SA 1.0 US: moonsamp stays off");
         return;
     }
+    script_trace = game_file_exists("moonsamp.trace");
+    if (script_trace)
+        ms_log("tracing opcode answers (moonsamp.trace)");
     if (!script_host_install())
         return;
     if (!samp_install())

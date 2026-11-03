@@ -40,12 +40,48 @@ static CleoRegisterFn cleo_register;
  * opcode not implemented yet they point at zeroes: "" or 0, never garbage. */
 static uint8_t zeroes[256];
 
+/* With moonsamp.trace in the game folder, each opcode's answer (condition
+ * and local var 0) is logged whenever it changes, to see which check a
+ * script stops on. */
+int script_trace;
+#define TRACE_SLOTS 8192
+static struct { Script *s; uint16_t op; uint8_t cond; int32_t v; } traced[TRACE_SLOTS];
+static int trace_lines;
+
+/* A few probes, then the first slot is reused: MoonLoader gives every
+ * lua_thread its own script, so keys keep coming and a full table must not
+ * make each call scan all of it (that stalled the game for minutes). */
+static void trace(Script *s, int op)
+{
+    unsigned first = ((uintptr_t)s * 2654435761u ^ (unsigned)op * 40503u) % TRACE_SLOTS, h = first, k;
+    for (k = 0; k < 8; k++, h = (h + 1) % TRACE_SLOTS)
+        if (!traced[h].s || (traced[h].s == s && traced[h].op == op))
+            break;
+    if (k == 8) {
+        h = first;
+        traced[h].s = NULL;
+    }
+    if (traced[h].s && traced[h].cond == s->cond_result)
+        return;
+    traced[h].s = s;
+    traced[h].op = (uint16_t)op;
+    traced[h].cond = s->cond_result;
+    traced[h].v = s->locals[0];
+    if (trace_lines++ < 20000)
+        ms_log("trace %04X script %08lX cond %d local0 %ld", op, (DWORD)s,
+               (int)s->cond_result, (long)s->locals[0]);
+}
+
 static int8_t THISCALL dispatch(Script *s, int op)
 {
     int i;
     op &= 0x7FFF;
-    if (handlers[op])
-        return handlers[op](s);
+    if (handlers[op]) {
+        int8_t r = handlers[op](s);
+        if (script_trace)
+            trace(s, op);
+        return r;
+    }
     if (!(warned[op >> 3] & (1 << (op & 7)))) {
         warned[op >> 3] |= 1 << (op & 7);
         ms_log("opcode %04X is not implemented", op);
@@ -161,6 +197,8 @@ int script_run_label(Script *s, int32_t label)
     ok = label_done;
     if (!ok)
         ms_log("callback stub of %.8s did not return", s->name);
+    else if (script_trace)
+        ms_log("trace: callback stub at %08lX ran to its return", (DWORD)(s->base_ip - label));
     label_done = saved_done;
     s->ip = saved_ip;
     for (i = 0; i < 8; i++)

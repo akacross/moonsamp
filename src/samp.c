@@ -187,6 +187,8 @@ static void flush_commands(void)
             commands[i].added = 1;
             if (!input_add(in, commands[i].name, thunks + i * 10))
                 ms_log("could not add /%s to SA-MP", commands[i].name);
+            else if (script_trace)
+                ms_log("trace: /%s added to SA-MP (%d commands)", commands[i].name, AT(in, INPUT_COUNT, int));
         }
 }
 
@@ -200,6 +202,8 @@ void samp_run_command(Script *s, int32_t label, const char *params)
 void __cdecl on_command(int i, const char *params)
 {
     Command *c = &commands[i];
+    if (script_trace)
+        ms_log("trace: SA-MP runs /%s \"%s\"%s", c->name, params ? params : "", c->used ? "" : " (unused slot)");
     if (c->used)
         samp_run_command(c->script, c->label, params);
 }
@@ -250,6 +254,115 @@ static void ready(void)
         flush_commands();
 }
 
+/* Traced: SA-MP's own state behind the checks scripts make, logged when it
+ * changes. */
+static void trace_state(void)
+{
+    static int last[7] = { -9, -9, -9, -9, -9, -9, -9 };
+    void *in = input(), *dlg = global(B->dialog), *sb = global(B->scoreboard);
+    void *g = global(B->game), *lp = samp_local_player(), *ng = netgame();
+    int now[7], i, changed = 0;
+    now[0] = in ? AT(in, INPUT_ENABLED, int) : -1;
+    now[1] = dlg ? AT(dlg, 0x28, int) : -1;
+    now[2] = sb ? AT(sb, 0, int) : -1;
+    now[3] = g ? AT(g, 0x61, int) : -1;
+    now[4] = lp ? AT(lp, 0xF4, int) : -1;
+    now[5] = lp ? AT(lp, 0xF8, int) : -1;
+    now[6] = ng ? AT(ng, NETGAME_STATE, int) : -1;
+    for (i = 0; i < 7; i++)
+        changed |= now[i] != last[i];
+    if (!changed)
+        return;
+    for (i = 0; i < 7; i++)
+        last[i] = now[i];
+    ms_log("state: chat input %d, dialog %d, scoreboard %d, cursor %d, local +F4 %d +F8 %d, gamestate %d",
+           now[0], now[1], now[2], now[3], now[4], now[5], now[6]);
+}
+
+/* Traced: keyboard messages reaching the game thread's queue (a
+ * WH_GETMESSAGE hook, before any window procedure), which window has focus,
+ * and which module heads GTA's window procedure chain, once a second. */
+static volatile LONG keydowns, syskeys, chars;
+static HHOOK msg_hook;
+
+static void key_name(char *out, WPARAM vk)
+{
+    switch (vk) {
+    case 'T': lstrcpyA(out, "T"); break;
+    case VK_TAB: lstrcpyA(out, "Tab"); break;
+    case VK_ESCAPE: lstrcpyA(out, "Esc"); break;
+    case VK_F6: lstrcpyA(out, "F6"); break;
+    case VK_MENU: lstrcpyA(out, "Alt"); break;
+    case VK_RETURN: lstrcpyA(out, "Enter"); break;
+    default: out[0] = 0;
+    }
+}
+
+static LRESULT CALLBACK msg_proc(int code, WPARAM wp, LPARAM lp)
+{
+    if (code >= 0 && wp == PM_REMOVE) {
+        MSG *m = (MSG *)lp;
+        char name[8];
+        if (m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN) {
+            if (m->message == WM_KEYDOWN)
+                InterlockedIncrement(&keydowns);
+            else
+                InterlockedIncrement(&syskeys);
+            key_name(name, m->wParam);
+            if (name[0] && !(m->lParam & 0x40000000))
+                ms_log("input: %s %s to window %08lX", m->message == WM_SYSKEYDOWN ? "syskey" : "key",
+                       name, (DWORD)m->hwnd);
+        } else if (m->message == WM_CHAR) {
+            InterlockedIncrement(&chars);
+        }
+    }
+    return CallNextHookEx(msg_hook, code, wp, lp);
+}
+
+static void trace_input(void)
+{
+    static DWORD next, last_focus, last_proc;
+    static LONG last_keys = -1;
+    GUITHREADINFO gi;
+    DWORD now = GetTickCount(), proc = 0;
+    HWND game;
+    char mod[MAX_PATH] = "?";
+    HMODULE m;
+    if (!msg_hook) {
+        msg_hook = SetWindowsHookExA(WH_GETMESSAGE, msg_proc, NULL, GetCurrentThreadId());
+        ms_log("input: message hook %s", msg_hook ? "on" : "failed");
+    }
+    if ((int)(now - next) < 0)
+        return;
+    next = now + 1000;
+    gi.cbSize = sizeof gi;
+    if (!GetGUIThreadInfo(GetCurrentThreadId(), &gi))
+        memset(&gi, 0, sizeof gi);
+    {
+        HWND *ps = *(HWND **)(0xC17040 + 0x14);            /* RsGlobal.ps; ->window first */
+        game = ps ? *ps : NULL;
+    }
+    if (game)
+        proc = (DWORD)GetWindowLongA(game, GWL_WNDPROC);
+    if (proc && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   (LPCSTR)proc, &m)) {
+        char *slash;
+        GetModuleFileNameA(m, mod, sizeof mod);
+        slash = mod + lstrlenA(mod);
+        while (slash > mod && slash[-1] != '\\' && slash[-1] != '/')
+            slash--;
+        lstrcpyA(mod, slash);
+    }
+    if (keydowns + syskeys + chars == last_keys && (DWORD)gi.hwndFocus == last_focus && proc == last_proc)
+        return;
+    last_keys = keydowns + syskeys + chars;
+    last_focus = (DWORD)gi.hwndFocus;
+    last_proc = proc;
+    ms_log("input: totals keydown %ld syskey %ld char %ld | game window %08lX focus %08lX active %08lX foreground %s | window proc %08lX in %s",
+           keydowns, syskeys, chars, (DWORD)game, (DWORD)gi.hwndFocus, (DWORD)gi.hwndActive,
+           GetForegroundWindow() == game ? "game" : "other", proc, mod);
+}
+
 /* Once a frame, from the CTimer::Update hook. */
 void samp_tick(void)
 {
@@ -257,6 +370,10 @@ void samp_tick(void)
         return;
     flush_commands();
     raknet_tick();
+    if (script_trace) {
+        trace_state();
+        trace_input();
+    }
 }
 
 /* 0AFA is_samp_available */
@@ -300,6 +417,10 @@ static int8_t __stdcall op_0AF8(Script *s)
             text = buf;
         }
         ((AddMessageFn)(base + B->add_message))(c, color, text);
+        if (script_trace)
+            ms_log("trace: chat message %08lX \"%.80s\"", (DWORD)color, text);
+    } else if (script_trace) {
+        ms_log("trace: chat message dropped, no CChat: \"%.80s\"", text);
     }
     return 0;
 }
@@ -514,13 +635,16 @@ static int8_t __stdcall op_0B36(Script *s)
     return 0;
 }
 
-/* 0B37 samp %2d% = get_player_color %1d% (ARGB) */
+/* 0B37 samp %2d% = get_player_color %1d%: ARGB with the alpha kept, which
+ * servers set to 0 to hide a player's marker. */
 static int8_t __stdcall op_0B37(Script *s)
 {
     int id = script_int(s);
     uint32_t c = 0;
-    if (build() && id >= 0 && id < MAX_PLAYERS)
-        c = (((ColorFn)(base + B->player_color))(id) >> 8) | 0xFF000000;
+    if (build() && id >= 0 && id < MAX_PLAYERS) {
+        uint32_t rgba = ((ColorFn)(base + B->player_color))(id);
+        c = rgba >> 8 | rgba << 24;
+    }
     ScriptParams[0].u = c;
     script_store(s, 1);
     return 0;
@@ -815,12 +939,12 @@ static int8_t __stdcall op_0B38(Script *s)
     return 0;
 }
 
-/* 0B5A get_screen_resolution %1d% %2d%: height, then width. MoonLoader's
- * getScreenResolution (its SAMPFUNCS version) returns local 1, local 0. */
+/* 0B5A get_screen_resolution %1d% %2d%: width, then height. In game,
+ * MoonLoader's getScreenResolution returns them in that order. */
 static int8_t __stdcall op_0B5A(Script *s)
 {
-    ScriptParams[0].i = *(int32_t *)0xC17048;   /* RsGlobal.maximumHeight */
-    ScriptParams[1].i = *(int32_t *)0xC17044;   /* RsGlobal.maximumWidth */
+    ScriptParams[0].i = *(int32_t *)0xC17044;   /* RsGlobal.maximumWidth */
+    ScriptParams[1].i = *(int32_t *)0xC17048;   /* RsGlobal.maximumHeight */
     script_store(s, 2);
     return 0;
 }
