@@ -197,8 +197,6 @@ int script_run_label(Script *s, int32_t label)
     ok = label_done;
     if (!ok)
         ms_log("callback stub of %.8s did not return", s->name);
-    else if (script_trace)
-        ms_log("trace: callback stub at %08lX ran to its return", (DWORD)(s->base_ip - label));
     label_done = saved_done;
     s->ip = saved_ip;
     for (i = 0; i < 8; i++)

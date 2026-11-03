@@ -281,6 +281,32 @@ __declspec(dllexport) int run(void)
     check(strstr(log, "mirrored line") == NULL, "log: MoonLoader's own mirrored lines left out");
     check(strstr(log, "console: unknown command \"lua\"") != NULL, "log: unknown console command");
 
+    /* the log never grows past 1 MB, however long a traced session runs */
+    {
+        static char big[1 << 20], line[200];
+        size_t r, i;
+        FILE *g;
+        for (i = 0; i < 20000; i++) {
+            wsprintfA(line, "flood line %05u ................................................................", (unsigned)i);
+            n = put_str(0, line);
+            n = put8(n, 0x00);
+            call(0x0B78, n);
+        }
+        g = fopen("moonsamp.log", "rb");
+        r = g ? fread(big, 1, sizeof big - 1, g) : 0;
+        if (g) {
+            fseek(g, 0, SEEK_END);
+            check(ftell(g) <= 1024 * 1024, "moonsamp.log stays at or under 1 MB after a 2 MB flood");
+            fclose(g);
+        }
+        big[r] = 0;
+        check(strstr(big, "moonsamp ") != NULL && strstr(big, "opcode table installed") != NULL,
+              "it starts over keeping its first lines (version, table)");
+        check(strstr(big, "older lines dropped") != NULL, "and says older lines were dropped");
+        check(strstr(big, "flood line 19999") != NULL && strstr(big, "flood line 00000") == NULL,
+              "the newest lines are kept, the oldest gone");
+    }
+
     printf("%d passed, %d failed\n", passed, failed);
     fflush(stdout);
     return failed ? 1 : 0;

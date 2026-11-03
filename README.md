@@ -88,6 +88,10 @@ behind the scripts' checks (chat box, dialog, scoreboard, cursor, spawned,
 gamestate), every command SA-MP runs, chat messages, and keyboard input
 reaching the game window with its focus. Delete the file to turn it off.
 
+`moonsamp.log` never grows past 1 MB: when it would, it starts over, keeping
+its first lines (version, SA-MP build, hooks) and a note that older lines
+were dropped.
+
 ## Build and test
 
     ./build.sh          # -> moonsamp.asi (i686 mingw, no CRT)

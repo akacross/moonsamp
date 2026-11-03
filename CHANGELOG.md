@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- Chat colours: `sampAddChatMessage` colours are converted for SA-MP, which
+  takes RGBA. Every colour but white came out wrong in 0.4.9 (pink showed as
+  green).
+- `moonsamp.log` never grows past 1 MB. When it would, it starts over,
+  keeping its first lines and a note that older lines were dropped.
+- The trace no longer logs every RakNet callback, only failed ones.
+
 ## 0.4.9
 
 First release.

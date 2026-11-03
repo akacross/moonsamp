@@ -58,16 +58,16 @@ typedef struct {
     uint16_t pp_largest, pp_used, pp_info, pp_local_id, pp_local_name, pp_local_obj, pp_local_ping;
     uint8_t info_remote, info_name, info_ping, remote_ped;
     uint32_t show, close, lb_sel, lb_select, eb_get, eb_set, shutdown, cursor, setname, special, td_set;
-    uint32_t vehicle_find, player_color;
+    uint32_t vehicle_find, player_color, add_message;
 } Layout;
 
 static const Layout layouts[] = {
     { 0xCC4D0, 0x26E8DC, 0x26E8C8, 0x26E8CC, 0x26E898, 0x26E8F4, 0x26E894,
       0x0000, 0x0FB4, 0x0004, 0x2F1C, 0x2F22, 0x2F3A, 0x2F14, 0x00, 0x0C, 0x04, 0x00,
-      0x6F8C0, 0x6FF40, 0x88760, 0x8A2E0, 0x84F40, 0x84E70, 0xA1E0, 0x9FFE0, 0xB5C0, 0x3340, 0xB26D0, 0x1E440, 0xA6AF0 },
+      0x6F8C0, 0x6FF40, 0x88760, 0x8A2E0, 0x84F40, 0x84E70, 0xA1E0, 0x9FFE0, 0xB5C0, 0x3340, 0xB26D0, 0x1E440, 0xA6AF0, 0x679F0 },
     { 0xFDB60, 0x2ACA24, 0x2ACA10, 0x2ACA14, 0x2AC9E0, 0x2ACA3C, 0x2AC9DC,
       0x0022, 0x0FD6, 0x0026, 0x0000, 0x0006, 0x001E, 0x2F36, 0x08, 0x14, 0x0C, 0x04,
-      0x6FA50, 0x700D0, 0x888F0, 0x8A470, 0x850D0, 0x85000, 0xA230, 0xA0530, 0xB5E0, 0x3390, 0xB2B60, 0x1E650, 0xA6F70 },
+      0x6FA50, 0x700D0, 0x888F0, 0x8A470, 0x850D0, 0x85000, 0xA230, 0xA0530, 0xB5E0, 0x3390, 0xB2B60, 0x1E650, 0xA6F70, 0x67BE0 },
 };
 
 #define AT(p, off, T) (*(T *)((uint8_t *)(p) + (off)))
@@ -95,6 +95,14 @@ static void THISCALL s_cursor(void *g, int mode, int hide) { rec(g, mode, hide);
 static void THISCALL s_setname(void *pp, const char *name) { rec(pp, 0, 0); strcpy(last.s[0], name); }
 static char THISCALL s_special(void *lp) { rec(lp, 0, 0); return 7; }
 static void THISCALL s_td_set(void *td, const char *t) { rec(td, 0, 0); strcpy(last.s[0], t); }
+static uint32_t chat_color;
+static char chat_text[160];
+static void THISCALL s_add_message(void *c, uint32_t color, const char *text)
+{
+    rec(c, 0, 0);
+    chat_color = color;
+    strcpy(chat_text, text);
+}
 static uint32_t __stdcall s_color(int id) { return id == 1 ? 0x11223300 : 0xAABBCCFF; }
 static uint8_t vehicles[3 * 0xA18];
 static uint16_t THISCALL s_vehicle_find(void *vp, void *car) { rec(vp, 0, 0); return car == vehicles + 0xA18 ? 12 : 0xFFFF; }
@@ -186,6 +194,7 @@ __declspec(dllexport) int run(void)
     jump(base, L->setname, s_setname);   jump(base, L->special, s_special);
     jump(base, L->td_set, s_td_set);     jump(base, L->vehicle_find, s_vehicle_find);
     jump(base, L->player_color, s_color);
+    jump(base, L->add_message, s_add_message);
     *(void **)0xB74490 = &ped_pool;
     *(void **)0xB74494 = &vehicle_pool;
     *(int32_t *)0xC17044 = 1920;
@@ -264,6 +273,12 @@ __declspec(dllexport) int run(void)
     check(strcmp(buf, "Test Server") == 0, "0B3A server name into MoonLoader's buffer");
     begin(); put_int((int32_t)(uintptr_t)buf); put_local(0); op(0x0B39);
     check(strcmp(buf, "1.2.3.4") == 0 && LOCAL(0) == 7777, "0B39 address and port");
+
+    /* chat: scripts pass RGB / ARGB, SA-MP's AddMessage takes RGBA */
+    begin(); put_str("pink"); put_int(0xFF00FF); opbuf[n++] = 0; op(0x0AF8);
+    check(chat_color == 0xFF00FFFF && strcmp(chat_text, "pink") == 0, "0AF8 0xFF00FF reaches AddMessage as RGBA FF00FFFF (pink, not green)");
+    begin(); put_str("white"); put_int(-1); opbuf[n++] = 0; op(0x0AF8);
+    check(chat_color == 0xFFFFFFFF, "0AF8 -1 stays white");
 
     /* players */
     check(op_cond0(0x0B61) == 1, "0B61 local player spawned");

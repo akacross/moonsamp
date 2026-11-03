@@ -416,7 +416,8 @@ static int8_t __stdcall op_0AF8(Script *s)
             lstrcpynA(buf, text, sizeof buf);
             text = buf;
         }
-        ((AddMessageFn)(base + B->add_message))(c, color, text);
+        /* Scripts pass 0xRRGGBB or 0xAARRGGBB; AddMessage takes RGBA. */
+        ((AddMessageFn)(base + B->add_message))(c, color << 8 | 0xFF, text);
         if (script_trace)
             ms_log("trace: chat message %08lX \"%.80s\"", (DWORD)color, text);
     } else if (script_trace) {

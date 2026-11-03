@@ -11,8 +11,18 @@
 static char game_dir[GAME_DIR_MAX];
 static HANDLE log_file = INVALID_HANDLE_VALUE;
 
+/* moonsamp.log never grows past LOG_MAX: a line that would cross it starts
+ * the file over with its first lines (version, SA-MP build, hooks) kept,
+ * so a long traced session cannot fill the disk. */
+#define LOG_MAX  (1024 * 1024)
+#define LOG_HEAD 2048
+static char log_head[LOG_HEAD];
+static DWORD log_head_len, log_size;
+static int log_head_full;
+
 void ms_log(const char *fmt, ...)
 {
+    static const char cut[] = "--- moonsamp.log reached 1 MB: older lines dropped ---\r\n";
     char buf[1100];
     SYSTEMTIME t;
     DWORD w;
@@ -27,7 +37,23 @@ void ms_log(const char *fmt, ...)
     va_end(ap);
     buf[n++] = '\r';
     buf[n++] = '\n';
+    if (!log_head_full) {
+        if (log_head_len + n <= LOG_HEAD) {
+            memcpy(log_head + log_head_len, buf, n);
+            log_head_len += n;
+        } else {
+            log_head_full = 1;
+        }
+    }
+    if (log_size + n > LOG_MAX) {
+        SetFilePointer(log_file, 0, NULL, FILE_BEGIN);
+        SetEndOfFile(log_file);
+        WriteFile(log_file, log_head, log_head_len, &w, NULL);
+        WriteFile(log_file, cut, sizeof cut - 1, &w, NULL);
+        log_size = log_head_len + sizeof cut - 1;
+    }
     WriteFile(log_file, buf, n, &w, NULL);
+    log_size += n;
 }
 
 /* No CRT: gcc still emits calls to these for struct copies. */
