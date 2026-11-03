@@ -97,3 +97,7 @@ reaching the game window with its focus. Delete the file to turn it off.
 
 `tools/find_offsets.py` locates SA-MP functions in other samp.dll builds from
 their R3-1 addresses (relocation-masked signatures).
+
+## License
+
+GPL-3.0, see LICENSE.
