@@ -95,6 +95,11 @@ reaching the game window with its focus. Delete the file to turn it off.
                         # against gta_sa.exe's script engine and a mapped (not
                         # running) samp.dll with fake objects
 
+Release: commit, tag `v<VERSION>`, push the tag, then
+`python3 tools/release.py v<VERSION> "moonsamp <VERSION>" notes.md`. It builds
+`dist/moonsamp.zip` from the tag (`tools/package.sh`), uploads it and creates
+the GitLab release with a drop-in install link.
+
 `tools/find_offsets.py` locates SA-MP functions in other samp.dll builds from
 their R3-1 addresses (relocation-masked signatures).
 
