@@ -161,10 +161,13 @@ __declspec(dllexport) int run(void)
 
     /* unknown SAMPFUNCS opcode: false, no crash */
     LOCAL(0) = 0x1234;
+    LOCAL(8) = 0x1234;
+    LOCAL(31) = 0x1234;
     call(0x0B99, 0);
     check(COND == 0, "an unimplemented opcode returns false");
-    check(LOCAL(0) != 0x1234 && *(const char *)(uintptr_t)LOCAL(0) == 0,
-          "an unimplemented opcode leaves \"\" in its result vars");
+    check(LOCAL(0) != 0x1234 && *(const char *)(uintptr_t)LOCAL(0) == 0 &&
+          LOCAL(8) == LOCAL(0) && LOCAL(31) == LOCAL(0),
+          "an unimplemented opcode leaves \"\" in all 32 result vars (0C46 reads local 8)");
 
     /* phase 4: global variables are shared by every script */
     {

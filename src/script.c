@@ -36,8 +36,9 @@ static OpcodeFn handlers[0x8000];
 static uint8_t warned[0x8000 / 8];
 static CleoRegisterFn cleo_register;
 
-/* MoonLoader reads results from local vars 0-7, strings as char*. For an
- * opcode not implemented yet they point at zeroes: "" or 0, never garbage. */
+/* MoonLoader reads results from local vars, strings as char* (0C46 puts its
+ * text in local 8). For an opcode not implemented yet every local points at
+ * zeroes: "" or 0, never a stale pointer it would read as a string. */
 static uint8_t zeroes[256];
 
 /* With moonsamp.trace in the game folder, each opcode's answer (condition
@@ -86,7 +87,7 @@ static int8_t THISCALL dispatch(Script *s, int op)
         warned[op >> 3] |= 1 << (op & 7);
         ms_log("opcode %04X is not implemented", op);
     }
-    for (i = 0; i < 8; i++)
+    for (i = 0; i < 32; i++)
         s->locals[i] = (int32_t)(uintptr_t)zeroes;
     UpdateCompareFlag(s, 0);
     return 0;

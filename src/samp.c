@@ -12,14 +12,16 @@ static const Build builds[] = {
       0x00, 0x0C, 0x00,
       0x408E7, 0x3A6A0, 0x121914, 0x53A60, 0x53B90, 0x1EFF0, 0x1F190,
       0x26E898, 0x26E8F4, 0x26E894, 0x6F8C0, 0x6FF40, 0x88760, 0x8A2E0, 0x84F40, 0x84E70,
-      0xA1E0, 0x9FFE0, 0xB5C0, 0x1E440, 0x3340, 0xB26D0, 0x04, 0x2F14 },
+      0xA1E0, 0x9FFE0, 0xB5C0, 0x1E440, 0x3340, 0xB26D0, 0x04, 0x2F14,
+      0x8BA0, 0xADF00, 0x9C7C0, 0x105, 0x2F18, 0x24, 0x28 },
     { "0.3.DL-R1", 0xFDB60, 0x2ACA24, 0x2ACA10, 0x2ACA14,
       0x67BE0, 0x5860, 0x69340, 0xA6F70,
       0x0022, 0x0FD6, 0x0026, 0x0000, 0x0006, 0x001E,
       0x08, 0x14, 0x04,
       0x40AE7, 0x3A8A0, 0x15FA54, 0x53C60, 0x53D90, 0x1F1F0, 0x1F390,
       0x2AC9E0, 0x2ACA3C, 0x2AC9DC, 0x6FA50, 0x700D0, 0x888F0, 0x8A470, 0x850D0, 0x85000,
-      0xA230, 0xA0530, 0xB5E0, 0x1E650, 0x3390, 0xB2B60, 0x0C, 0x2F36 },
+      0xA230, 0xA0530, 0xB5E0, 0x1E650, 0x3390, 0xB2B60, 0x0C, 0x2F36,
+      0x8C00, 0xAE390, 0x9C950, 0x07C, 0x2F3A, 0x00, 0x04 },
 };
 
 /* Shared by every supported build. */
@@ -92,6 +94,13 @@ void *samp_pool(int slot)
 }
 
 static void *player_pool(void) { return samp_pool(POOL_PLAYER); }
+
+/* SA-MP keeps textdraw colours as ABGR; scripts use ARGB. Swapping red and
+ * blue converts either way. */
+uint32_t abgr_argb(uint32_t c)
+{
+    return (c & 0xFF00FF00) | (c & 0xFF) << 16 | (c >> 16 & 0xFF);
+}
 
 void copy_string(char *dst, const char *src, size_t size)
 {
@@ -370,6 +379,14 @@ void samp_tick(void)
         return;
     flush_commands();
     raknet_tick();
+    /* SA-MP asks for scores and pings only while the scoreboard is open;
+     * SAMPFUNCS keeps them current, so ask as it would (every 3 s, throttled
+     * by SA-MP itself). */
+    {
+        void *ng = netgame();
+        if (ng && AT(ng, NETGAME_STATE, int) == 5)
+            ((void (THISCALL *)(void *))(base + B->update_players))(ng);
+    }
     if (script_trace) {
         trace_state();
         trace_input();
@@ -577,8 +594,8 @@ static int8_t __stdcall op_0B20(Script *s)
 {
     int id = script_int(s);
     void *pp = player_pool(), *ped = NULL;
-    if (pp)
-        ped = id == local_id(pp) ? FindPlayerPed(-1) : remote_game_ped(pp, id);
+    if (pp && id != local_id(pp))   /* SAMPFUNCS: not for the local player */
+        ped = remote_game_ped(pp, id);
     ScriptParams[0].i = ped ? CPools_GetPedRef(ped) : -1;
     script_store(s, 1);
     script_cond(s, ped != NULL);
@@ -674,11 +691,6 @@ static void *remote_player(void *pp, int id)
     return info ? AT(info, B->info_remote, void *) : NULL;
 }
 
-static void *player_game_ped(void *pp, int id)
-{
-    return id == local_id(pp) ? FindPlayerPed(-1) : remote_game_ped(pp, id);
-}
-
 static void store1(Script *s, int32_t v)
 {
     ScriptParams[0].i = v;
@@ -710,7 +722,9 @@ static int8_t __stdcall op_0C8A(Script *s)
     return 0;
 }
 
-/* 0C8B samp %2d% = get_player_count streamed_only %1d% (the local player included) */
+/* 0C8B samp %2d% = get_player_count streamed_only %1d%: every connected
+ * player plus the local one. SAMPFUNCS doesn't leave NPCs out (on Unity RP,
+ * SA-MP 0.3.DL marks every player as an NPC). */
 static int8_t __stdcall op_0C8B(Script *s)
 {
     int streamed = script_int(s), n = 0, i, max;
@@ -726,29 +740,72 @@ static int8_t __stdcall op_0C8B(Script *s)
     return 0;
 }
 
-/* 0B57 samp %2d% = player %1d% animation_id: the ped's strongest-blended
- * animation, numbered as GTA's (and SA-MP's) animation table. */
+/* 0B57 samp %2d% = player %1d% animation_id: SA-MP's animation numbering.
+ * The local player's from CPed::GetCurrentAnimation, a remote player's from
+ * the animation in its last on-foot sync. */
 static int8_t __stdcall op_0B57(Script *s)
 {
-    int id = script_int(s), best = -1;
-    void *pp = player_pool(), *ped, *clump;
-    float top = -1.0f;
-    if (pp && (ped = player_game_ped(pp, id)) && (clump = AT(ped, 0x18, void *))) {
-        uint8_t *a = FirstAssociation(clump);
-        int guard = 0;
-        while (a && guard++ < 64) {
-            uintptr_t h = AT(a, 0x14, uintptr_t);
-            float blend = AT(a, 0x18, float);
-            if (h >= GTA_ANIMATIONS && h < GTA_ANIMATIONS + GTA_ANIMATION_COUNT * 0x18 && blend > top) {
-                top = blend;
-                best = (int)((h - GTA_ANIMATIONS) / 0x18);
-            }
-            a = AT(a, 4, uint8_t *);
-            a = a ? a - 4 : NULL;
+    int id = script_int(s), anim = 0;
+    void *pp = player_pool(), *rp, *lp, *ped;
+    if (pp) {
+        if (id == local_id(pp)) {
+            if ((lp = local_player()) != NULL && (ped = AT(lp, 0, void *)) != NULL)
+                anim = ((uint32_t (THISCALL *)(void *))(base + B->current_anim))(ped) & 0xFFFF;
+        } else if ((rp = remote_player(pp, id)) != NULL) {
+            anim = AT(rp, B->remote_anim, uint32_t) & 0xFFFF;
         }
     }
-    store1(s, best < 0 ? 0 : best);
-    script_cond(s, best >= 0);
+    store1(s, anim);
+    return 0;
+}
+
+/* 0B58 samp get_animation_name_and_file %1d% name %2d% file %3d%: from SA-MP's
+ * table of "FILE:NAME" entries, into MoonLoader's buffers */
+static const char *anim_entry(int id)
+{
+    return ((const char *(__cdecl *)(int))(base + B->anim_entry))(id);
+}
+
+static int8_t __stdcall op_0B58(Script *s)
+{
+    char *name, *file;
+    const char *e, *colon;
+    int id;
+    script_collect(s, 3);
+    id = ScriptParams[0].i;
+    name = ScriptParams[1].p;
+    file = ScriptParams[2].p;
+    if (name) name[0] = 0;
+    if (file) file[0] = 0;
+    e = build() && id > 0 ? anim_entry(id) : NULL;
+    for (colon = e; colon && *colon && *colon != ':'; colon++)
+        ;
+    if (e && *colon == ':') {
+        if (file) copy_string(file, e, (size_t)(colon - e) + 1);
+        if (name) copy_string(name, colon + 1, 64);
+    }
+    script_cond(s, e != NULL);
+    return 0;
+}
+
+/* 0B59 samp %3d% = find_animation_id_by_name %1d% file %2d% */
+static int8_t __stdcall op_0B59(Script *s)
+{
+    char name[64], file[64], want[130];
+    int id, found = -1;
+    copy_string(name, script_string(s, name, sizeof name), sizeof name);
+    copy_string(file, script_string(s, file, sizeof file), sizeof file);
+    wsprintfA(want, "%s:%s", file, name);
+    if (build())
+        for (id = 1; id <= 0x714; id++) {
+            const char *e = anim_entry(id);
+            if (e && lstrcmpiA(e, want) == 0) {
+                found = id;
+                break;
+            }
+        }
+    store1(s, found);
+    script_cond(s, found > 0);
     return 0;
 }
 
@@ -757,8 +814,9 @@ static int8_t __stdcall op_0B5C(Script *s)
 {
     int id = script_int(s);
     void *pp = player_pool(), *rp;
+    /* status 2 also means "no sync yet": only a streamed ped can be paused */
     script_cond(s, pp && id != local_id(pp) && (rp = remote_player(pp, id)) &&
-                   AT(rp, REMOTE_STATUS, int) == 2);
+                   remote_game_ped(pp, id) && AT(rp, REMOTE_STATUS, int) == 2);
     return 0;
 }
 
@@ -950,6 +1008,101 @@ static int8_t __stdcall op_0B5A(Script *s)
     return 0;
 }
 
+/* 0B65 samp %2d% = get_player_score %1d% */
+static int8_t __stdcall op_0B65(Script *s)
+{
+    int id = script_int(s), v = 0;
+    void *pp = player_pool(), *info;
+    if (pp) {
+        if (id == local_id(pp))
+            v = AT(pp, B->pp_local_score, int);
+        else if ((info = player_info(pp, id)) != NULL)
+            v = AT(info, B->info_score, int);
+    }
+    store1(s, v);
+    return 0;
+}
+
+/* 0B64 samp is_player_npc %1d% */
+static int8_t __stdcall op_0B64(Script *s)
+{
+    int id = script_int(s);
+    void *pp = player_pool(), *info;
+    script_cond(s, pp && (info = player_info(pp, id)) && AT(info, B->info_npc, int));
+    return 0;
+}
+
+/* 0BDB samp is_chat_visible: the chat isn't switched off (F7) */
+static int8_t __stdcall op_0BDB(Script *s)
+{
+    void *c = chat();
+    script_cond(s, c && AT(c, 0x8, int) != 0);
+    return 0;
+}
+
+/* 0B8E samp %1d% = get_cursor_mode */
+static int8_t __stdcall op_0B8E(Script *s)
+{
+    void *g = build() ? global(B->game) : NULL;
+    store1(s, g ? AT(g, 0x61, int) : 0);
+    return 0;
+}
+
+/* 0AFF samp %2d% = car_handle_by_samp_vehicle_id %1d% */
+static int8_t __stdcall op_0AFF(Script *s)
+{
+    typedef int (__cdecl *VehicleRefFn)(void *);
+    int id = script_int(s), handle = -1;
+    void *vp = samp_pool(POOL_VEHICLE), *car;
+    if (vp && id > 0 && id <= AT(vp, 0, int) && id < 2000 && (car = AT(vp, 0x4FB4 + id * 4, void *)) != NULL)
+        handle = ((VehicleRefFn)0x54FFC0)(car);
+    store1(s, handle);
+    script_cond(s, handle != -1);
+    return 0;
+}
+
+/* 0B2F samp get_streamed_out_player_pos %1d% to %2d% %3d% %4d%: SAMPFUNCS
+ * reported no position for any player tested; so does this, with zeros */
+static int8_t __stdcall op_0B2F(Script *s)
+{
+    script_int(s);
+    ScriptParams[0].f = ScriptParams[1].f = ScriptParams[2].f = 0;
+    script_store(s, 3);
+    script_cond(s, 0);
+    return 0;
+}
+
+/* 0C92 %1d% = get_cleo_library_version: the CLEO moonsamp stands in for */
+static int8_t __stdcall op_0C92(Script *s)
+{
+    store1(s, 0x04040400);   /* 4.4.4, what SAMPFUNCS reports with CLEO 4.4.4 */
+    return 0;
+}
+
+/* 0B75 samp get_chat_string %1d% text_to %2d% prefix_to %3d% color_to %4d% prefix_color_to %5d%:
+ * CChat's 100 lines start at +0x132, 0xFC bytes each (time, prefix[28],
+ * text[144], ..., type, colour, prefix colour) in R3-1 and 0.3.DL */
+static int8_t __stdcall op_0B75(Script *s)
+{
+    char *text, *prefix;
+    int id;
+    uint8_t *c = chat(), *e = NULL;
+    script_collect(s, 3);
+    id = ScriptParams[0].i;
+    text = ScriptParams[1].p;
+    prefix = ScriptParams[2].p;
+    if (c && id >= 0 && id < 100)
+        e = c + 0x132 + id * 0xFC;
+    if (text)
+        copy_string(text, e ? (const char *)e + 0x20 : "", 144);
+    if (prefix)
+        copy_string(prefix, e ? (const char *)e + 0x04 : "", 28);
+    ScriptParams[0].u = e ? AT(e, 0xF4, uint32_t) : 0;
+    ScriptParams[1].u = e ? AT(e, 0xF8, uint32_t) : 0;
+    script_store(s, 2);
+    return 0;
+}
+
 static void players_install(void)
 {
     static const struct { uint16_t op; OpcodeFn fn; } ops[] = {
@@ -958,7 +1111,9 @@ static void players_install(void)
         { 0x0B62, op_0B62 }, { 0x0B2C, op_0B2C }, { 0x0B29, op_0B29 }, { 0x0B46, op_0B46 },
         { 0x0BB5, op_0BB5 }, { 0x0BDC, op_0BDC }, { 0x0B8C, op_0B8C }, { 0x0B8D, op_0B8D },
         { 0x0BD5, op_0BD5 }, { 0x0B3A, op_0B3A }, { 0x0B39, op_0B39 }, { 0x0B38, op_0B38 },
-        { 0x0B5A, op_0B5A },
+        { 0x0B5A, op_0B5A }, { 0x0B58, op_0B58 }, { 0x0B59, op_0B59 }, { 0x0B65, op_0B65 },
+        { 0x0B64, op_0B64 }, { 0x0BDB, op_0BDB }, { 0x0B8E, op_0B8E }, { 0x0AFF, op_0AFF },
+        { 0x0B2F, op_0B2F }, { 0x0C92, op_0C92 }, { 0x0B75, op_0B75 },
     };
     size_t i;
     for (i = 0; i < sizeof ops / sizeof ops[0]; i++)

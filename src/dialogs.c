@@ -223,12 +223,21 @@ static int8_t __stdcall op_0B4B(Script *s)
     return 0;
 }
 
+/* 0BDA samp is_dialog_clientside: not answered to the server */
+static int8_t __stdcall op_0BDA(Script *s)
+{
+    void *dlg = dialog();
+    script_cond(s, !dlg || AT(dlg, DLG_SERVERSIDE, int) != 1);
+    return 0;
+}
+
 void dialogs_install(void)
 {
     static const struct { uint16_t op; OpcodeFn fn; } ops[] = {
         { 0x0B4C, op_0B4C }, { 0x0B4E, op_0B4E }, { 0x0B4D, op_0B4D }, { 0x0B3B, op_0B3B },
         { 0x0BD9, op_0BD9 }, { 0x0B3C, op_0B3C }, { 0x0BC9, op_0BC9 }, { 0x0B47, op_0B47 },
         { 0x0B48, op_0B48 }, { 0x0B49, op_0B49 }, { 0x0B4A, op_0B4A }, { 0x0B4B, op_0B4B },
+        { 0x0BDA, op_0BDA },
     };
     size_t i;
     for (i = 0; i < sizeof ops / sizeof ops[0]; i++)

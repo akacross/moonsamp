@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.6.1
+
+Checked against SAMPFUNCS with an in-game self-test run under both
+(`test/ingame/`): every comparable value now matches.
+
+**Fixed**
+
+- `sampGetPlayerPing` was always 0: SA-MP only asks the server for scores
+  and pings while the scoreboard is open. moonsamp asks every 3 s, as
+  SAMPFUNCS keeps them current.
+- `sampIsPlayerPaused` was true for players not streamed in.
+- `sampGetCharHandleBySampPlayerId` gives no handle for the local player, as
+  SAMPFUNCS does.
+- `sampGetPlayerAnimationId` uses SA-MP's animation numbering (your own from
+  SA-MP's current animation, other players' from their sync), not GTA's.
+- Textdraw colours are ARGB to scripts (SA-MP keeps ABGR), in getters and
+  setters.
+- Unimplemented functions with more than 8 results no longer read a stale
+  pointer as a string (`sampGet3dTextInfoById` crashed the script that way).
+
+**Added**
+
+- `sampGetPlayerScore`, `sampIsPlayerNpc`, `sampGetCarHandleBySampVehicleId`,
+  `sampGetStreamedOutPlayerPos`, `sampGetCursorMode`, `sampIsChatVisible`,
+  `sampIsDialogClientside`, `sampGetChatString`, `getCleoLibraryVersion`.
+- `raknetGetRpcName`, `raknetGetPacketName` (names from the SAMPFUNCS SDK).
+- `sampGetAnimationNameAndFile`, `sampFindAnimationIdByNameAndFile`.
+- `sampGet3dTextInfoById`; textdraw align, proportional, style, shadow,
+  outline and model getters.
+
 ## 0.5.0
 
 - Chat colours: `sampAddChatMessage` colours are converted for SA-MP, which

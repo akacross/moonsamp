@@ -80,6 +80,11 @@ typedef struct {
     uint32_t special_action;                        /* CLocalPlayer::GetSpecialAction */
     uint32_t textdraw_set_text;                     /* CTextDraw::SetText */
     uint16_t info_ping, pp_local_ping;
+    uint32_t update_players;                        /* CNetGame::UpdatePlayers (scores, pings) */
+    uint32_t current_anim;                          /* CPed::GetCurrentAnimation: id | flags << 16 */
+    uint32_t anim_entry;                            /* "FILE:NAME" of SA-MP animation id, or NULL */
+    uint16_t remote_anim, pp_local_score;           /* sync animation dword; local score */
+    uint8_t info_score, info_npc;
 } Build;
 
 /* samp.c */
@@ -93,6 +98,7 @@ int samp_install(void);
 void samp_tick(void);
 void copy_string(char *dst, const char *src, size_t size);
 void samp_run_command(Script *s, int32_t label, const char *params);
+uint32_t abgr_argb(uint32_t c);
 
 /* Pools: CNetGame + 0x3DE -> SPools, the same in every supported build. */
 #define POOL_PLAYER   0x08

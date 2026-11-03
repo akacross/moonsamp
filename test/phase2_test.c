@@ -58,16 +58,18 @@ typedef struct {
     uint16_t pp_largest, pp_used, pp_info, pp_local_id, pp_local_name, pp_local_obj, pp_local_ping;
     uint8_t info_remote, info_name, info_ping, remote_ped;
     uint32_t show, close, lb_sel, lb_select, eb_get, eb_set, shutdown, cursor, setname, special, td_set;
-    uint32_t vehicle_find, player_color, add_message;
+    uint32_t vehicle_find, player_color, add_message, current_anim, anim_entry;
+    uint16_t remote_anim, local_score;
+    uint8_t info_score, info_npc;
 } Layout;
 
 static const Layout layouts[] = {
     { 0xCC4D0, 0x26E8DC, 0x26E8C8, 0x26E8CC, 0x26E898, 0x26E8F4, 0x26E894,
       0x0000, 0x0FB4, 0x0004, 0x2F1C, 0x2F22, 0x2F3A, 0x2F14, 0x00, 0x0C, 0x04, 0x00,
-      0x6F8C0, 0x6FF40, 0x88760, 0x8A2E0, 0x84F40, 0x84E70, 0xA1E0, 0x9FFE0, 0xB5C0, 0x3340, 0xB26D0, 0x1E440, 0xA6AF0, 0x679F0 },
+      0x6F8C0, 0x6FF40, 0x88760, 0x8A2E0, 0x84F40, 0x84E70, 0xA1E0, 0x9FFE0, 0xB5C0, 0x3340, 0xB26D0, 0x1E440, 0xA6AF0, 0x679F0, 0xADF00, 0x9C7C0, 0x105, 0x2F18, 0x24, 0x28 },
     { 0xFDB60, 0x2ACA24, 0x2ACA10, 0x2ACA14, 0x2AC9E0, 0x2ACA3C, 0x2AC9DC,
       0x0022, 0x0FD6, 0x0026, 0x0000, 0x0006, 0x001E, 0x2F36, 0x08, 0x14, 0x0C, 0x04,
-      0x6FA50, 0x700D0, 0x888F0, 0x8A470, 0x850D0, 0x85000, 0xA230, 0xA0530, 0xB5E0, 0x3390, 0xB2B60, 0x1E650, 0xA6F70, 0x67BE0 },
+      0x6FA50, 0x700D0, 0x888F0, 0x8A470, 0x850D0, 0x85000, 0xA230, 0xA0530, 0xB5E0, 0x3390, 0xB2B60, 0x1E650, 0xA6F70, 0x67BE0, 0xAE390, 0x9C950, 0x07C, 0x2F3A, 0x00, 0x04 },
 };
 
 #define AT(p, off, T) (*(T *)((uint8_t *)(p) + (off)))
@@ -95,6 +97,9 @@ static void THISCALL s_cursor(void *g, int mode, int hide) { rec(g, mode, hide);
 static void THISCALL s_setname(void *pp, const char *name) { rec(pp, 0, 0); strcpy(last.s[0], name); }
 static char THISCALL s_special(void *lp) { rec(lp, 0, 0); return 7; }
 static void THISCALL s_td_set(void *td, const char *t) { rec(td, 0, 0); strcpy(last.s[0], t); }
+static void *anim_ped;
+static uint32_t THISCALL s_current_anim(void *ped) { anim_ped = ped; return 0x00041189 & 0xFFFF0000 | 1189; }
+static const char *__cdecl s_anim_entry(int id) { return id == 1189 ? "PED:IDLE_STANCE" : id == 7 ? "BAR:BARMAN_IDLE" : NULL; }
 static uint32_t chat_color;
 static char chat_text[160];
 static void THISCALL s_add_message(void *c, uint32_t color, const char *text)
@@ -164,7 +169,7 @@ static void set_name(uint8_t *p, const char *s)
 static uint8_t netgame[0x400], pools[0x40], pp[0x3000], lp[0x400], info1[0x40], info4[0x40];
 static uint8_t remote1[0x200], remote4[0x200], label_pool[0xE800 + 0x2000];
 static uint8_t td_pool[0x2400 + 2304 * 4], td[0x9D6], gz_pool[16], dlg[0x100], game[0x100];
-static uint8_t scoreboard[0x44], chat[0x100], input[0x1B00], listbox[16], editbox[16];
+static uint8_t scoreboard[0x44], chat[0x63EA], input[0x1B00], listbox[16], editbox[16];
 
 __declspec(dllexport) int run(void)
 {
@@ -195,6 +200,8 @@ __declspec(dllexport) int run(void)
     jump(base, L->td_set, s_td_set);     jump(base, L->vehicle_find, s_vehicle_find);
     jump(base, L->player_color, s_color);
     jump(base, L->add_message, s_add_message);
+    jump(base, L->current_anim, s_current_anim);
+    jump(base, L->anim_entry, s_anim_entry);
     *(void **)0xB74490 = &ped_pool;
     *(void **)0xB74494 = &vehicle_pool;
     *(int32_t *)0xC17044 = 1920;
@@ -241,8 +248,30 @@ __declspec(dllexport) int run(void)
         AT(remote1, L->remote_ped, void *) = samp_ped;
         AT(samp_ped, 0x2A4, void *) = peds + 2 * 0x7C4;
     }
-    AT(pools, 0x0C, void *) = gz_pool + 8;
+    {
+        static uint8_t vpool[0x4FB4 + 2000 * 4];
+        AT(vpool, 0, int) = 5;
+        AT(vpool, 0x4FB4 + 3 * 4, void *) = vehicles + 0xA18;
+        AT(pools, 0x0C, void *) = vpool;
+    }
     AT(lp, 0xF4, int) = 1;
+    {
+        static uint8_t local_ped[0x300];
+        AT(lp, 0, void *) = local_ped;
+    }
+    AT(pp, L->local_score, int) = 12;
+    AT(info1, L->info_score, int) = 24;
+    AT(info4, L->info_npc, int) = 1;
+    AT(remote1, L->remote_anim, uint32_t) = 0x00080007;   /* id 7, flags 8 */
+    {   /* 3D text 9 */
+        static char label_text[] = "Press 'H' to use elevator";
+        uint8_t *l = label_pool + 9 * 0x1D;
+        AT(l, 0, char *) = label_text;
+        AT(l, 4, uint32_t) = 0xAB000000;
+        AT(l, 8, float) = 1784.98f; AT(l, 0xC, float) = -1302.04f; AT(l, 0x10, float) = 13.65f;
+        AT(l, 0x14, float) = 4.0f; AT(l, 0x18, uint8_t) = 0;   /* no LOS test: drawn behind walls */
+        AT(l, 0x19, uint16_t) = 0xFFFF; AT(l, 0x1B, uint16_t) = 0xFFFF;
+    }
     AT(label_pool, 0xE800 + 9 * 4, int) = 1;
     AT(td_pool, 7 * 4, int) = 1;
     AT(td_pool, 0x2400 + 7 * 4, void *) = td;
@@ -251,6 +280,9 @@ __declspec(dllexport) int run(void)
     AT(td, 0x971, uint8_t) = 1;   AT(td, 0x97A, uint32_t) = 0x80000000;
     AT(td, 0x972, float) = 640.0f; AT(td, 0x976, float) = 20.0f;
     AT(td, 0x98B, float) = 320.0f; AT(td, 0x98F, float) = 240.0f;
+    AT(td, 0x986, uint8_t) = 1;  AT(td, 0x97E, uint8_t) = 1;  AT(td, 0x987, int) = 2;
+    AT(td, 0x983, uint8_t) = 1;  AT(td, 0x97F, uint32_t) = 0xA6000000;
+    AT(td, 0x9B6, float) = 1.0f; AT(td, 0x9BA, uint16_t) = 0xFFFF; AT(td, 0x9BC, uint16_t) = 0xFFFF;
     AT(dlg, 0x20, void *) = listbox;
     AT(dlg, 0x24, void *) = editbox;
     AT(dlg, 0x28, int) = 1; AT(dlg, 0x2C, int) = 2; AT(dlg, 0x30, int) = 1234; AT(dlg, 0x81, int) = 1;
@@ -287,7 +319,7 @@ __declspec(dllexport) int run(void)
     begin(); put_i8(1); put_local(0); op(0x0C8A);
     check(LOCAL(0) == 3, "0C8A streamed only: none streamed, so the local id");
     begin(); put_i8(0); put_local(0); op(0x0C8B);
-    check(LOCAL(0) == 3, "0C8B two remote players plus the local one");
+    check(LOCAL(0) == 3, "0C8B two remote players plus the local one (NPCs counted, as SAMPFUNCS does)");
     check(op_int(0x0B2A, 1) == 42 && op_int(0x0B2A, 3) == 33, "0B2A ping, remote and local");
     check(op_cond(0x0B5C, 1) == 1 && op_cond(0x0B5C, 4) == 0, "0B5C paused is status 2");
     check(op_int(0x0B25, 1) == 75 && op_int(0x0B26, 1) == 50, "0B25 / 0B26 reported health and armour");
@@ -328,7 +360,11 @@ __declspec(dllexport) int run(void)
         check(COND == 0 && LOCAL(0) == -1, "0B2B a stale handle is no player");
         last.called = 0;
         begin(); put_int(1 << 8 | 0x07); put_local(0); op(0x0B2C);
-        check(COND == 1 && LOCAL(0) == 12 && last.self == gz_pool + 8, "0B2C car handle 0x107 -> vehicle 12");
+        check(COND == 1 && LOCAL(0) == 12, "0B2C car handle 0x107 -> vehicle 12");
+        begin(); put_int(3); put_local(0); op(0x0AFF);
+        check(COND == 1 && LOCAL(0) == (1 << 8 | 0x07), "0AFF vehicle 3 -> car handle 0x107");
+        begin(); put_int(4); put_local(0); op(0x0AFF);
+        check(COND == 0 && LOCAL(0) == -1, "0AFF an empty vehicle slot is no handle");
         begin(); put_local(0); put_local(1); op(0x0B5A);
         check(LOCAL(0) == 1920 && LOCAL(1) == 1080, "0B5A width in local 0, height in local 1");
         check(x87_tags() == before && before == 0xFFFF, "the x87 stack is still empty after them");
@@ -401,15 +437,67 @@ __declspec(dllexport) int run(void)
     begin(); put_int(7); put_float(10.0f); put_float(20.0f); op(0x0C51);
     check(AT(td, 0x98B, float) == 10.0f && AT(td, 0x98F, float) == 20.0f, "0C51 sets the position");
     begin(); put_int(7); put_local(0); put_local(1); put_local(2); op(0x0C5C);
-    check(LOCALF(0) == 0.5f && LOCALF(1) == 1.5f && (uint32_t)LOCAL(2) == 0xFF00FF00, "0C5C letter size and colour");
+    AT(td, 0x96B, uint32_t) = 0xFF2A45FF;   /* ABGR, as SA-MP keeps it */
+    begin(); put_int(7); put_local(0); put_local(1); put_local(2); op(0x0C5C);
+    check(LOCALF(0) == 0.5f && LOCALF(1) == 1.5f && (uint32_t)LOCAL(2) == 0xFFFF452A, "0C5C letter size, colour as ARGB");
     begin(); put_int(7); put_float(0.25f); put_float(1.0f); put_int(0x11223344); op(0x0C52);
-    check(AT(td, 0x963, float) == 0.25f && AT(td, 0x96B, uint32_t) == 0x11223344, "0C52 sets them");
+    check(AT(td, 0x963, float) == 0.25f && AT(td, 0x96B, uint32_t) == 0x11443322, "0C52 sets them (ARGB in, ABGR stored)");
     begin(); put_int(7); put_local(0); put_local(1); put_local(2); put_local(3); op(0x0C53);
     check(LOCAL(0) == 1 && (uint32_t)LOCAL(1) == 0x80000000 && LOCALF(2) == 640.0f && LOCALF(3) == 20.0f,
           "0C53 box, colour, size");
     begin(); put_int(7); put_int(0); put_int(0x55); put_float(1.0f); put_float(2.0f); op(0x0C49);
-    check(AT(td, 0x971, uint8_t) == 0 && AT(td, 0x97A, uint32_t) == 0x55 && AT(td, 0x976, float) == 2.0f,
-          "0C49 sets them");
+    check(AT(td, 0x971, uint8_t) == 0 && AT(td, 0x97A, uint32_t) == 0x550000 && AT(td, 0x976, float) == 2.0f,
+          "0C49 sets them (ARGB in, ABGR stored)");
+
+    /* more getters (from the SAMPFUNCS comparison) */
+    begin(); put_int(7); put_local(0); op(0x0C54); check(LOCAL(0) == 3, "0C54 align: right = 3");
+    begin(); put_int(7); put_local(0); op(0x0C55); check(LOCAL(0) == 1, "0C55 proportional");
+    begin(); put_int(7); put_local(0); op(0x0C56); check(LOCAL(0) == 2, "0C56 style");
+    begin(); put_int(7); put_local(0); put_local(1); op(0x0C57);
+    check(LOCAL(0) == 1 && (uint32_t)LOCAL(1) == 0xA6000000, "0C57 shadow and its colour");
+    begin(); put_int(7); put_local(0); put_local(1); put_local(2); put_local(3); put_local(4); put_local(5); put_local(6); op(0x0C59);
+    check(LOCAL(0) == 0 && LOCALF(4) == 1.0f && LOCAL(5) == 0xFFFF && LOCAL(6) == 0xFFFF, "0C59 model, rotation, zoom, colours");
+    begin(); put_int(9);
+    for (i = 0; i < 9; i++) put_local((int)(i == 0 ? 8 : i - 1));
+    op(0x0C46);
+    check(strcmp((const char *)(uintptr_t)LOCAL(8), "Press 'H' to use elevator") == 0 && (uint32_t)LOCAL(0) == 0xAB000000 &&
+          LOCALF(4) == 4.0f && LOCAL(5) == 1 && LOCAL(6) == 0xFFFF, "0C46 3D text info, text in local 8, behind walls");
+    {   /* chat line 99 */
+        char text[160], prefix[40];
+        uint8_t *e = chat + 0x132 + 99 * 0xFC;
+        strcpy((char *)e + 0x20, "Organization: Higher Croft Crips Family.");
+        strcpy((char *)e + 0x04, "[R]");
+        AT(e, 0xF4, uint32_t) = 0xFF00FF00; AT(e, 0xF8, uint32_t) = 0xFFAA0000;
+        begin(); put_int(99); put_int((int32_t)(uintptr_t)text); put_int((int32_t)(uintptr_t)prefix); put_local(0); put_local(1); op(0x0B75);
+        check(strcmp(text, "Organization: Higher Croft Crips Family.") == 0 && strcmp(prefix, "[R]") == 0 &&
+              (uint32_t)LOCAL(0) == 0xFF00FF00 && (uint32_t)LOCAL(1) == 0xFFAA0000, "0B75 chat line 99: text, prefix, colours");
+    }
+    check(op_int(0x0B65, 1) == 24 && op_int(0x0B65, 3) == 12, "0B65 score, remote and local");
+    check(op_cond(0x0B64, 4) == 1 && op_cond(0x0B64, 1) == 0, "0B64 NPC flag");
+    AT(remote4, 0x1D1, int) = 2;
+    check(op_cond(0x0B5C, 4) == 0, "0B5C status 2 without a streamed ped is not paused");
+    AT(remote4, 0x1D1, int) = 0;
+    begin(); put_int(3); put_local(0); op(0x0B20);
+    check(COND == 0, "0B20 gives no handle for the local player (as SAMPFUNCS)");
+    check(op_int(0x0B57, 3) == 1189 && anim_ped == AT(lp, 0, void *), "0B57 local animation from CPed::GetCurrentAnimation");
+    check(op_int(0x0B57, 1) == 7, "0B57 remote animation from its on-foot sync");
+    {
+        char nm[64], fl[64];
+        begin(); put_int(1189); put_int((int32_t)(uintptr_t)nm); put_int((int32_t)(uintptr_t)fl); op(0x0B58);
+        check(COND == 1 && strcmp(nm, "IDLE_STANCE") == 0 && strcmp(fl, "PED") == 0, "0B58 animation 1189 is PED:IDLE_STANCE");
+        begin(); put_str("barman_idle"); put_str("BAR"); put_local(0); op(0x0B59);
+        check(COND == 1 && LOCAL(0) == 7, "0B59 finds BAR:BARMAN_IDLE as 7");
+    }
+    begin(); put_int(25); put_local(0); op(0x0BF8);
+    check(strcmp((const char *)(uintptr_t)LOCAL(0), "ClientJoin") == 0, "0BF8 RPC 25 is ClientJoin");
+    begin(); put_int(207); put_local(0); op(0x0BF9);
+    check(strcmp((const char *)(uintptr_t)LOCAL(0), "PLAYER_SYNC") == 0, "0BF9 packet 207 is PLAYER_SYNC");
+    check(op_cond0(0x0BDB) == 1, "0BDB chat visible (mode 2)");
+    check(op_out(0x0B8E) == 2, "0B8E cursor mode");
+    AT(dlg, 0x81, int) = 0;
+    check(op_cond0(0x0BDA) == 1, "0BDA a dialog not answered to the server is client-side");
+    AT(dlg, 0x81, int) = 1;
+    check(op_cond0(0x0BDA) == 0, "0BDA a server dialog is not");
 
     /* reconnect */
     last.called = 0;

@@ -10,6 +10,7 @@
  * DeallocatePacket (9) and RPC (25), and the call to RakPeer::HandleRPCPacket
  * in RakClient::Receive, which parses RPCs before any handler runs. */
 #include "moonsamp.h"
+#include "names.h"
 
 typedef struct BitStream {
     int bits_used;
@@ -833,6 +834,17 @@ static int8_t __stdcall op_0BF7(Script *s)
     return 0;
 }
 
+/* 0BF8 raknet %2d% = get_rpc_name %1d%, 0BF9 ... get_packet_name */
+static int8_t name_of(Script *s, const char *const *table)
+{
+    int id = script_int(s);
+    ScriptParams[0].p = (void *)(id >= 0 && id < 256 && table[id] ? table[id] : "");
+    script_store(s, 1);
+    return 0;
+}
+static int8_t __stdcall op_0BF8(Script *s) { return name_of(s, rpc_names); }
+static int8_t __stdcall op_0BF9(Script *s) { return name_of(s, packet_names); }
+
 void raknet_install(void)
 {
     static const struct { uint16_t op; OpcodeFn fn; } ops[] = {
@@ -844,6 +856,7 @@ void raknet_install(void)
         { 0x0BEC, op_0BEC }, { 0x0BED, op_0BED }, { 0x0BEE, op_0BEE }, { 0x0BEF, op_0BEF },
         { 0x0BF0, op_0BF0 }, { 0x0BF1, op_0BF1 }, { 0x0BF2, op_0BF2 }, { 0x0BF3, op_0BF3 },
         { 0x0BF4, op_0BF4 }, { 0x0BF5, op_0BF5 }, { 0x0BF6, op_0BF6 }, { 0x0BF7, op_0BF7 },
+        { 0x0BF8, op_0BF8 }, { 0x0BF9, op_0BF9 },
     };
     size_t i;
     for (i = 0; i < sizeof ops / sizeof ops[0]; i++)

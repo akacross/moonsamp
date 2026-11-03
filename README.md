@@ -55,7 +55,12 @@ GTA:SA 1.0 US. samp.dll 0.3.7-R3-1 and 0.3.DL-R1.
 | 0B3B / 0B3C / 0BD9 / 0BC9 | sampShowDialog, sampHasDialogRespond, sampSetDialogClientside, sampSendDialogResponse |
 | 0B4C / 0B4D / 0B4E / 0B47 | sampIsDialogActive, sampGetCurrentDialogType / Id, sampCloseCurrentDialogWithButton |
 | 0B48 / 0B49 / 0B4A / 0B4B | sampGet/SetCurrentDialogListItem, sampGet/SetCurrentDialogEditboxText |
-| 0C49-0C5D | sampTextdrawIsExists, Get/SetString, Get/SetPos, Get/SetLetterSizeAndColor, Get/SetBoxEnabledColorAndSize |
+| 0C49-0C5D | sampTextdrawIsExists, Get/SetString, Get/SetPos, Get/SetLetterSizeAndColor, Get/SetBoxEnabledColorAndSize, GetAlign, GetProportional, GetStyle, GetShadowColor, GetOutlineColor, GetModelRotationZoomVehColor |
+| 0B64 / 0B65 / 0AFF / 0B2F | sampIsPlayerNpc, sampGetPlayerScore, sampGetCarHandleBySampVehicleId, sampGetStreamedOutPlayerPos |
+| 0B58 / 0B59 | sampGetAnimationNameAndFile, sampFindAnimationIdByNameAndFile |
+| 0B75 / 0B8E / 0BDA / 0BDB | sampGetChatString, sampGetCursorMode, sampIsDialogClientside, sampIsChatVisible |
+| 0C46 | sampGet3dTextInfoById |
+| 0BF8 / 0BF9 / 0C92 | raknetGetRpcName, raknetGetPacketName, getCleoLibraryVersion |
 | 0B3D-0B40, 0BE7-0BF3 | raknetNewBitStream, Delete/Reset, Write*/Read*, offsets, sizes, data pointer |
 | 0BF4 / 0BF5 | raknetBitStreamDecodeString / EncodeString (SA-MP's own StringCompressor) |
 | 0BE0-0BE6 | the onSendRpc / onSendPacket / onReceiveRpc / onReceivePacket hooks (samp.events) |
@@ -76,6 +81,10 @@ frees its own BitStreams with its own CRT.
 A dialog a script shows is client-side: moonsamp shows it with
 `m_bServerside = 2`, which SA-MP still treats as true, and the outgoing RPC
 hook keeps its DialogResponse for sampHasDialogRespond instead of sending it.
+
+The in-game self-test (`test/ingame/moonsamp_selftest.lua`, compared with
+`test/ingame/compare.py`) runs the read-only functions under SAMPFUNCS and
+under moonsamp; every value both can give matches.
 
 Any other opcode returns false and leaves `""` / 0 in its results, and is
 named once in `moonsamp.log`.
