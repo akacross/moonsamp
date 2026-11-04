@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+**Added**
+
+- SA-MP 0.3.7-R1, R2, R3, R4 and R5, next to R3-1 and 0.3.DL-R1: every
+  function moonsamp has works on all seven builds.
+- `tools/check_builds.py` checks every address and offset moonsamp uses
+  against each build's own code.
+
 ## 0.6.1
 
 Checked against SAMPFUNCS with an in-game self-test run under both

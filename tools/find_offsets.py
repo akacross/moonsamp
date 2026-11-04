@@ -3,6 +3,8 @@
 
     tools/find_offsets.py <dir with 0.3.7-R3-1/ 0.3.DL/ ...> <r3 rva>... [--dis]
 
+REF=<build> takes the addresses from that build instead of R3-1.
+
 For each R3-1 function: its first bytes, with relocated dwords and call/jmp
 targets masked, are searched for in each other build; failing that, the
 bytes around each R3-1 call to it are, and the call's target is read from the
@@ -16,8 +18,9 @@ from pathlib import Path
 
 import pefile
 
-REF = '0.3.7-R3-1'
-BUILDS = ['0.3.7-R1', '0.3.7-R3-1', '0.3.7-R5', '0.3.DL']
+import os
+REF = os.environ.get('REF', '0.3.7-R3-1')
+BUILDS = ['0.3.7-R1', '0.3.7-R2', '0.3.7-R3', '0.3.7-R3-1', '0.3.7-R4', '0.3.7-R5', '0.3.DL']
 
 
 class Image:

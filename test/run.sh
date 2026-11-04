@@ -5,16 +5,21 @@
 # exe is only read; the copy that runs imports only KERNEL32 and its entry
 # point only loads the test. Needs wine, python3 and i686-w64-mingw32-gcc.
 #
-#   test/run.sh [path/to/gta_sa.exe] [path/to/samp.dll (R3-1 or 0.3.DL)]
+#   test/run.sh [path/to/gta_sa.exe] [samp.dll...]
+#
+# Each samp.dll (any supported build) gets raknet_test and phase2_test; with
+# none given, the game folder's. test/run.sh "" samp-dlls/*/samp.dll runs
+# every build.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(dirname "$here")"
 exe="${1:-/mnt/data/Games/samp-0.3.7/gta_sa.exe}"
-samp="${2:-/mnt/data/Games/samp-0.3.7/samp.dll}"
+[ -n "$exe" ] || exe=/mnt/data/Games/samp-0.3.7/gta_sa.exe
+shift || true
+[ $# -gt 0 ] || set -- /mnt/data/Games/samp-0.3.7/samp.dll
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 export WINEPREFIX="$work/prefix" WINEDEBUG=-all
 OUT="$work/moonsamp.asi" "$root/build.sh" >/dev/null
-cp "$samp" "$work/samp.dll"
 for t in host_test raknet_test phase2_test; do
     i686-w64-mingw32-gcc -O2 -Wall -shared -static -o "$work/$t.dll" "$here/$t.c"
 done
@@ -61,11 +66,20 @@ PY
 cd "$work"
 touch moonsamp.trace    # traced, as the user runs it: its bookkeeping is tested too
 status=0
-for t in host_test raknet_test phase2_test; do
-    patch_exe "$t"
-    echo "=== $t"
-    wine "$t.exe" || status=1
+run() {
+    patch_exe "$1"
+    echo "=== $1${2:+ ($2)}"
+    rm -f moonsamp.log
+    wine "$1.exe" || { status=1; failed+=("$1${2:+ $2}"); }
     echo "--- moonsamp.log"
     cat moonsamp.log 2>/dev/null || true
+}
+failed=()
+run host_test
+for dll in "$@"; do
+    cp "$dll" samp.dll
+    run raknet_test "$dll"
+    run phase2_test "$dll"
 done
+[ ${#failed[@]} -eq 0 ] && echo "all passed" || printf 'FAILED: %s\n' "${failed[@]}"
 exit $status

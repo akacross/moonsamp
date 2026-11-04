@@ -136,7 +136,7 @@ static int8_t __stdcall op_0BC9(Script *s)
     uint8_t d[6 + 255];
     const char *text;
     int id, button, list, len;
-    void *ng, *rc;
+    void *rc;
     script_collect(s, 3);
     id = ScriptParams[0].i;
     button = ScriptParams[1].i;
@@ -150,7 +150,7 @@ static int8_t __stdcall op_0BC9(Script *s)
     d[3] = (uint8_t)list; d[4] = (uint8_t)(list >> 8);
     d[5] = (uint8_t)len;
     memcpy(d + 6, text, len);
-    if ((ng = samp_netgame()) && (rc = AT(ng, 0x2C, void *))) {
+    if ((rc = samp_rakclient()) != NULL) {
         typedef int (THISCALL *RpcFn)(void *, int *, void *, int, int, int, int);
         struct { int used, allocated, read; uint8_t *data; uint8_t copy, stack[1]; } __attribute__((packed)) bs;
         int rpc = RPC_DIALOG_RESPONSE;

@@ -52,24 +52,29 @@ void script_label_return(void);
 
 #define AT(p, off, T) (*(T *)((uint8_t *)(p) + (off)))
 
-/* One samp.dll build: RVAs of what moonsamp calls, and struct offsets. */
+/* Indexes into Build.pool: which SPools slot holds each pool. */
+enum { POOL_PLAYER, POOL_VEHICLE, POOL_GANGZONE, POOL_LABEL, POOL_TEXTDRAW,
+       POOL_OBJECT, POOL_PICKUP, POOL_ACTOR, POOL_MENU, POOL_COUNT };
+
+/* Indexes into Build.state: CNetGame's game state values. */
+enum { GS_WAITING, GS_CONNECTING, GS_CONNECTED, GS_AWAITING_JOIN, GS_RESTARTING, GS_COUNT };
+
+/* One samp.dll build: RVAs of what moonsamp calls, and struct offsets
+ * (src/builds.h). */
 typedef struct {
     const char *name;
     uint32_t entry;                 /* AddressOfEntryPoint: identifies the build */
-    uint32_t netgame, chat, input;  /* globals holding the object pointers */
+    /* globals holding the object pointers */
+    uint32_t netgame, chat, input, dialog, game, scoreboard, string_compressor;
+    /* functions */
     uint32_t add_message;           /* CChat::AddMessage(color, text) */
     uint32_t local_chat;            /* CLocalPlayer::Chat(text) */
     uint32_t send_command;          /* sends "/cmd args" to the server */
     uint32_t player_color;          /* stdcall RGBA GetPlayerColor(id) */
-    uint16_t pp_largest, pp_used, pp_info;
-    uint16_t pp_local_id, pp_local_name, pp_local_obj;
-    uint8_t info_remote, info_name, remote_ped;
     uint32_t handle_rpc_call;       /* the call to HandleRPCPacket in RakClient::Receive */
     uint32_t handle_rpc;            /* RakPeer::HandleRPCPacket(data, length, PlayerID) */
-    uint32_t string_compressor;     /* global StringCompressor* */
-    uint32_t encode_string, decode_string;
-    uint32_t bs_ctor, bs_dtor;      /* RakNet::BitStream() / ~BitStream() */
-    uint32_t dialog, game, scoreboard;              /* globals */
+    uint32_t encode_string, decode_string;          /* StringCompressor */
+    uint32_t bs_ctor, bs_dtor;                      /* RakNet::BitStream() / ~BitStream() */
     uint32_t dialog_show, dialog_close;             /* CDialog::Show / Close */
     uint32_t listbox_selected, listbox_select;      /* CDXUTListBox::GetSelectedIndex / SelectItem */
     uint32_t editbox_get, editbox_set;              /* CDXUTEditBox::GetText / SetText */
@@ -79,12 +84,23 @@ typedef struct {
     uint32_t vehicle_find;                          /* CVehiclePool::Find(CVehicle *) */
     uint32_t special_action;                        /* CLocalPlayer::GetSpecialAction */
     uint32_t textdraw_set_text;                     /* CTextDraw::SetText */
-    uint16_t info_ping, pp_local_ping;
     uint32_t update_players;                        /* CNetGame::UpdatePlayers (scores, pings) */
     uint32_t current_anim;                          /* CPed::GetCurrentAnimation: id | flags << 16 */
     uint32_t anim_entry;                            /* "FILE:NAME" of SA-MP animation id, or NULL */
-    uint16_t remote_anim, pp_local_score;           /* sync animation dword; local score */
-    uint8_t info_score, info_npc;
+    /* CNetGame: hostname at host + 0x101, port at host + 0x205, last
+     * connect attempt at state + 4 */
+    uint16_t ng_rakclient, ng_host, ng_state, ng_pools;
+    uint8_t pool[POOL_COUNT];
+    uint8_t state[GS_COUNT];
+    /* CPlayerPool */
+    uint16_t pp_largest, pp_used, pp_info;
+    uint16_t pp_local_id, pp_local_name, pp_local_obj, pp_local_ping, pp_local_score;
+    /* CPlayerInfo */
+    uint8_t info_remote, info_name, info_ping, info_score, info_npc;
+    /* CRemotePlayer: health at armour + 4; the animation from the on-foot sync */
+    uint16_t remote_ped, remote_special, remote_armour, remote_status, remote_anim;
+    /* CLocalPlayer, CGame */
+    uint16_t local_ped, local_active, game_cursor;
 } Build;
 
 /* samp.c */
@@ -92,7 +108,9 @@ extern uintptr_t samp_base;
 const Build *samp_build(void);
 void *samp_netgame(void);
 void *samp_global(uint32_t rva);
-void *samp_pool(int slot);
+void *samp_pool(int which);
+void *samp_rakclient(void);
+int samp_state(void);
 void *samp_local_player(void);
 int samp_install(void);
 void samp_tick(void);
@@ -100,12 +118,6 @@ void copy_string(char *dst, const char *src, size_t size);
 void samp_run_command(Script *s, int32_t label, const char *params);
 uint32_t abgr_argb(uint32_t c);
 
-/* Pools: CNetGame + 0x3DE -> SPools, the same in every supported build. */
-#define POOL_PLAYER   0x08
-#define POOL_VEHICLE  0x0C
-#define POOL_GANGZONE 0x18
-#define POOL_LABEL    0x1C
-#define POOL_TEXTDRAW 0x20
 
 /* dialogs.c */
 void dialogs_install(void);

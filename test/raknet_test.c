@@ -8,8 +8,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
+#include "../src/builds.h"
 
-#define THISCALL __attribute__((thiscall))
 typedef int8_t (THISCALL *Handler)(void *, int);
 
 typedef struct {
@@ -212,7 +212,8 @@ __declspec(dllexport) int run(void)
 {
     HMODULE samp, ms;
     uintptr_t base;
-    uint32_t entry, ng_rva, handle_rva;
+    uint32_t entry;
+    const Build *L = NULL;
     int i;
 
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -222,21 +223,23 @@ __declspec(dllexport) int run(void)
         return 1;
     base = (uintptr_t)samp;
     entry = *(uint32_t *)(base + *(uint32_t *)(base + 0x3C) + 0x28);
-    if (entry == 0xFDB60) { ng_rva = 0x2ACA24; handle_rva = 0x3A8A0; }
-    else if (entry == 0xCC4D0) { ng_rva = 0x26E8DC; handle_rva = 0x3A6A0; }
-    else { printf("samp.dll build %x not covered\n", entry); return 1; }
+    for (i = 0; i < (int)(sizeof builds / sizeof builds[0]); i++)
+        if (builds[i].entry == entry)
+            L = &builds[i];
+    if (!L) { printf("samp.dll build %x not covered\n", entry); return 1; }
+    printf("build %s\n", L->name);
 
-    /* HandleRPCPacket -> f_handle; CNetGame -> fake with RakClient at +0x2C */
+    /* HandleRPCPacket -> f_handle; CNetGame -> fake holding the RakClient */
     {
         uint8_t jmp[5] = { 0xE9 };
         DWORD old;
-        uint8_t *h = (uint8_t *)(base + handle_rva);
+        uint8_t *h = (uint8_t *)(base + L->handle_rpc);
         *(int32_t *)(jmp + 1) = (int32_t)((uint8_t *)f_handle - (h + 5));
         VirtualProtect(h, 5, PAGE_EXECUTE_READWRITE, &old);
         memcpy(h, jmp, 5);
-        *(void **)(netgame + 0x2C) = &rak_client;
-        VirtualProtect((void *)(base + ng_rva), 4, PAGE_READWRITE, &old);
-        *(void **)(base + ng_rva) = netgame;
+        *(void **)(netgame + L->ng_rakclient) = &rak_client;
+        VirtualProtect((void *)(base + L->netgame), 4, PAGE_READWRITE, &old);
+        *(void **)(base + L->netgame) = netgame;
     }
     vtable[6] = (void *)f_send;
     vtable[8] = (void *)f_receive;
@@ -340,9 +343,9 @@ __declspec(dllexport) int run(void)
         static const uint8_t in[] = { 0x14, 0x5D, 0xE1, 0x01, 0x23, 0x40 };
         uint8_t *site;
         int (THISCALL *handle)(void *, const uint8_t *, int, uint32_t, uint32_t);
-        site = (uint8_t *)(base + (entry == 0xFDB60 ? 0x40AE7 : 0x408E7));
+        site = (uint8_t *)(base + L->handle_rpc_call);
         handle = (void *)(site + 5 + *(int32_t *)(site + 1));
-        check((uintptr_t)handle != base + handle_rva, "HandleRPCPacket call site hooked");
+        check((uintptr_t)handle != base + L->handle_rpc, "HandleRPCPacket call site hooked");
         mode = 3; calls = 0;
         handle(&rak_client, in, sizeof in, 0x0100007F, 7777);
         check(calls == 1 && seen[1] == 0x5D && seen_value == 0x3412,

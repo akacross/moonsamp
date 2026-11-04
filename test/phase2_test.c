@@ -7,8 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
+#include "../src/moonsamp.h"
 
-#define THISCALL __attribute__((thiscall))
 typedef int8_t (THISCALL *Handler)(void *, int);
 
 static int failed, passed;
@@ -51,28 +51,10 @@ static int op_cond(int code, int32_t arg) { begin(); put_int(arg); op(code); ret
 static int32_t op_out(int code) { begin(); put_local(0); op(code); return LOCAL(0); }
 static int op_cond0(int code) { begin(); op(code); return COND; }
 
-/* ---- the build ------------------------------------------------------------ */
+/* ---- the build: moonsamp's own table; tools/check_builds.py checks it
+ * against each build's code ------------------------------------------------- */
 
-typedef struct {
-    uint32_t entry, netgame, chat, input, dialog, game, scoreboard;
-    uint16_t pp_largest, pp_used, pp_info, pp_local_id, pp_local_name, pp_local_obj, pp_local_ping;
-    uint8_t info_remote, info_name, info_ping, remote_ped;
-    uint32_t show, close, lb_sel, lb_select, eb_get, eb_set, shutdown, cursor, setname, special, td_set;
-    uint32_t vehicle_find, player_color, add_message, current_anim, anim_entry;
-    uint16_t remote_anim, local_score;
-    uint8_t info_score, info_npc;
-} Layout;
-
-static const Layout layouts[] = {
-    { 0xCC4D0, 0x26E8DC, 0x26E8C8, 0x26E8CC, 0x26E898, 0x26E8F4, 0x26E894,
-      0x0000, 0x0FB4, 0x0004, 0x2F1C, 0x2F22, 0x2F3A, 0x2F14, 0x00, 0x0C, 0x04, 0x00,
-      0x6F8C0, 0x6FF40, 0x88760, 0x8A2E0, 0x84F40, 0x84E70, 0xA1E0, 0x9FFE0, 0xB5C0, 0x3340, 0xB26D0, 0x1E440, 0xA6AF0, 0x679F0, 0xADF00, 0x9C7C0, 0x105, 0x2F18, 0x24, 0x28 },
-    { 0xFDB60, 0x2ACA24, 0x2ACA10, 0x2ACA14, 0x2AC9E0, 0x2ACA3C, 0x2AC9DC,
-      0x0022, 0x0FD6, 0x0026, 0x0000, 0x0006, 0x001E, 0x2F36, 0x08, 0x14, 0x0C, 0x04,
-      0x6FA50, 0x700D0, 0x888F0, 0x8A470, 0x850D0, 0x85000, 0xA230, 0xA0530, 0xB5E0, 0x3390, 0xB2B60, 0x1E650, 0xA6F70, 0x67BE0, 0xAE390, 0x9C950, 0x07C, 0x2F3A, 0x00, 0x04 },
-};
-
-#define AT(p, off, T) (*(T *)((uint8_t *)(p) + (off)))
+#include "../src/builds.h"
 
 /* ---- stubs for samp.dll's functions ---------------------------------------- */
 
@@ -175,7 +157,7 @@ __declspec(dllexport) int run(void)
 {
     HMODULE samp;
     uintptr_t base;
-    const Layout *L = NULL;
+    const Build *L = NULL;
     uint32_t entry;
     size_t i;
     char buf[0x1000];
@@ -187,17 +169,18 @@ __declspec(dllexport) int run(void)
         return 1;
     base = (uintptr_t)samp;
     entry = *(uint32_t *)(base + *(uint32_t *)(base + 0x3C) + 0x28);
-    for (i = 0; i < sizeof layouts / sizeof layouts[0]; i++)
-        if (layouts[i].entry == entry)
-            L = &layouts[i];
+    for (i = 0; i < sizeof builds / sizeof builds[0]; i++)
+        if (builds[i].entry == entry)
+            L = &builds[i];
     if (!L) { printf("samp.dll build %x not covered\n", entry); return 1; }
 
-    jump(base, L->show, s_show);         jump(base, L->close, s_close);
-    jump(base, L->lb_sel, s_lb_sel);     jump(base, L->lb_select, s_lb_select);
-    jump(base, L->eb_get, s_eb_get);     jump(base, L->eb_set, s_eb_set);
-    jump(base, L->shutdown, s_shutdown); jump(base, L->cursor, s_cursor);
-    jump(base, L->setname, s_setname);   jump(base, L->special, s_special);
-    jump(base, L->td_set, s_td_set);     jump(base, L->vehicle_find, s_vehicle_find);
+    printf("build %s\n", L->name);
+    jump(base, L->dialog_show, s_show);            jump(base, L->dialog_close, s_close);
+    jump(base, L->listbox_selected, s_lb_sel);     jump(base, L->listbox_select, s_lb_select);
+    jump(base, L->editbox_get, s_eb_get);          jump(base, L->editbox_set, s_eb_set);
+    jump(base, L->shutdown_restart, s_shutdown);   jump(base, L->set_cursor_mode, s_cursor);
+    jump(base, L->set_local_name, s_setname);      jump(base, L->special_action, s_special);
+    jump(base, L->textdraw_set_text, s_td_set);    jump(base, L->vehicle_find, s_vehicle_find);
     jump(base, L->player_color, s_color);
     jump(base, L->add_message, s_add_message);
     jump(base, L->current_anim, s_current_anim);
@@ -211,17 +194,17 @@ __declspec(dllexport) int run(void)
         vtable[i] = (void *)f_nop;
     vtable[2] = (void *)f_disconnect;
     vtable[25] = (void *)f_rpc;
-    AT(netgame, 0x2C, void *) = &rak;
-    strcpy((char *)netgame + 0x30, "1.2.3.4");
-    strcpy((char *)netgame + 0x131, "Test Server");
-    AT(netgame, 0x235, int) = 7777;
-    AT(netgame, 0x3CD, int) = 5;
-    AT(netgame, 0x3D1, int) = 12345;
-    AT(netgame, 0x3DE, void *) = pools;
-    AT(pools, 0x08, void *) = pp;
-    AT(pools, 0x18, void *) = gz_pool;
-    AT(pools, 0x1C, void *) = label_pool;
-    AT(pools, 0x20, void *) = td_pool;
+    AT(netgame, L->ng_rakclient, void *) = &rak;
+    strcpy((char *)netgame + L->ng_host, "1.2.3.4");
+    strcpy((char *)netgame + L->ng_host + 0x101, "Test Server");
+    AT(netgame, L->ng_host + 0x205, int) = 7777;
+    AT(netgame, L->ng_state, int) = L->state[GS_CONNECTED];
+    AT(netgame, L->ng_state + 4, int) = 12345;
+    AT(netgame, L->ng_pools, void *) = pools;
+    AT(pools, L->pool[POOL_PLAYER], void *) = pp;
+    AT(pools, L->pool[POOL_GANGZONE], void *) = gz_pool;
+    AT(pools, L->pool[POOL_LABEL], void *) = label_pool;
+    AT(pools, L->pool[POOL_TEXTDRAW], void *) = td_pool;
 
     AT(pp, L->pp_largest, int) = 5;
     AT(pp, L->pp_local_id, uint16_t) = 3;
@@ -237,14 +220,13 @@ __declspec(dllexport) int run(void)
     AT(info1, L->info_ping, int) = 42;
     AT(info4, L->info_remote, void *) = remote4;
     set_name(info4 + L->info_name, "Bob");
-    AT(remote1, 0x1B0, float) = 75.5f;
-    AT(remote1, 0x1AC, float) = 50.0f;
-    AT(remote1, 0x18, uint8_t) = 23;
-    AT(remote1, 0x1D1, int) = 2;
-    AT(remote4, 0x1D1, int) = 0;
+    AT(remote1, L->remote_armour + 4, float) = 75.5f;
+    AT(remote1, L->remote_armour, float) = 50.0f;
+    AT(remote1, L->remote_special, uint8_t) = 23;
+    AT(remote1, L->remote_status, int) = 2;
+    AT(remote4, L->remote_status, int) = 0;
     {
         static uint8_t samp_ped[0x300];
-        AT(remote1, 0, void *) = NULL;
         AT(remote1, L->remote_ped, void *) = samp_ped;
         AT(samp_ped, 0x2A4, void *) = peds + 2 * 0x7C4;
     }
@@ -252,14 +234,14 @@ __declspec(dllexport) int run(void)
         static uint8_t vpool[0x4FB4 + 2000 * 4];
         AT(vpool, 0, int) = 5;
         AT(vpool, 0x4FB4 + 3 * 4, void *) = vehicles + 0xA18;
-        AT(pools, 0x0C, void *) = vpool;
+        AT(pools, L->pool[POOL_VEHICLE], void *) = vpool;
     }
-    AT(lp, 0xF4, int) = 1;
+    AT(lp, L->local_active, int) = 1;
     {
         static uint8_t local_ped[0x300];
-        AT(lp, 0, void *) = local_ped;
+        AT(lp, L->local_ped, void *) = local_ped;
     }
-    AT(pp, L->local_score, int) = 12;
+    AT(pp, L->pp_local_score, int) = 12;
     AT(info1, L->info_score, int) = 24;
     AT(info4, L->info_npc, int) = 1;
     AT(remote1, L->remote_anim, uint32_t) = 0x00080007;   /* id 7, flags 8 */
@@ -338,7 +320,7 @@ __declspec(dllexport) int run(void)
     check(op_out(0x0BB5) == (int32_t)(uintptr_t)gz_pool, "0BB5 gangzone pool pointer");
     check(op_out(0x0BDC) == 2, "0BDC chat display mode");
     check(op_cond0(0x0B8C) == 0, "0B8C cursor off");
-    AT(game, 0x61, int) = 2;
+    AT(game, L->game_cursor, int) = 2;
     check(op_cond0(0x0B8C) == 1, "0B8C cursor on");
     last.called = 0;
     begin(); put_int(3); op(0x0B8D);
@@ -474,12 +456,12 @@ __declspec(dllexport) int run(void)
     }
     check(op_int(0x0B65, 1) == 24 && op_int(0x0B65, 3) == 12, "0B65 score, remote and local");
     check(op_cond(0x0B64, 4) == 1 && op_cond(0x0B64, 1) == 0, "0B64 NPC flag");
-    AT(remote4, 0x1D1, int) = 2;
+    AT(remote4, L->remote_status, int) = 2;
     check(op_cond(0x0B5C, 4) == 0, "0B5C status 2 without a streamed ped is not paused");
-    AT(remote4, 0x1D1, int) = 0;
+    AT(remote4, L->remote_status, int) = 0;
     begin(); put_int(3); put_local(0); op(0x0B20);
     check(COND == 0, "0B20 gives no handle for the local player (as SAMPFUNCS)");
-    check(op_int(0x0B57, 3) == 1189 && anim_ped == AT(lp, 0, void *), "0B57 local animation from CPed::GetCurrentAnimation");
+    check(op_int(0x0B57, 3) == 1189 && anim_ped == AT(lp, L->local_ped, void *), "0B57 local animation from CPed::GetCurrentAnimation");
     check(op_int(0x0B57, 1) == 7, "0B57 remote animation from its on-foot sync");
     {
         char nm[64], fl[64];
@@ -504,8 +486,8 @@ __declspec(dllexport) int run(void)
     begin(); put_str("5.6.7.8"); put_int(1234); op(0x0B38);
     check(disc_calls == 1 && disc_block == 500, "0B38 disconnects RakNet (500 ms)");
     check(last.called == 1 && last.self == netgame, "0B38 resets as for a server restart");
-    check(strcmp((char *)netgame + 0x30, "5.6.7.8") == 0 && AT(netgame, 0x235, int) == 1234 &&
-          AT(netgame, 0x3CD, int) == 1 && AT(netgame, 0x3D1, int) == 0,
+    check(strcmp((char *)netgame + L->ng_host, "5.6.7.8") == 0 && AT(netgame, L->ng_host + 0x205, int) == 1234 &&
+          AT(netgame, L->ng_state, int) == L->state[GS_WAITING] && AT(netgame, L->ng_state + 4, int) == 0,
           "0B38 sets the address and waits to connect");
 
     printf("%d passed, %d failed\n", passed, failed);

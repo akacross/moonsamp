@@ -250,11 +250,7 @@ static HandleRpcFn orig_handle_rpc;
 static uint32_t server_id[2];
 static int have_server_id;
 
-static void *rak_client(void)
-{
-    void *ng = samp_netgame();
-    return ng ? AT(ng, 0x2C, void *) : NULL;
-}
+static void *rak_client(void) { return samp_rakclient(); }
 
 static int THISCALL hook_send(void *rc, BitStream *bs, int priority, int reliability, int channel)
 {

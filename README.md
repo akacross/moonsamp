@@ -29,7 +29,8 @@ a SAMPFUNCS opcode (0AF8-0C9x) that SAMPFUNCS registers with
 
 ## Supported
 
-GTA:SA 1.0 US. samp.dll 0.3.7-R3-1 and 0.3.DL-R1.
+GTA:SA 1.0 US. samp.dll 0.3.7-R1, R2, R3, R3-1, R4, R5 and 0.3.DL-R1; each
+build's addresses and offsets are in `src/builds.h`.
 
 | Opcode | Function |
 | --- | --- |
@@ -74,8 +75,7 @@ GTA:SA 1.0 US. samp.dll 0.3.7-R3-1 and 0.3.DL-R1.
 
 RakNet hooks: RakClientInterface vtable slots Send (6), Receive (8),
 DeallocatePacket (9) and RPC (25), and the call to RakPeer::HandleRPCPacket
-inside RakClient::Receive (R3-1 `0x408E7`, DL `0x40AE7`; also found in R1
-`0x3D537` and R5 `0x41027`). Hook handlers get a copy of the stream: samp.dll
+inside RakClient::Receive (`handle_rpc_call` in `src/builds.h`). Hook handlers get a copy of the stream: samp.dll
 frees its own BitStreams with its own CRT.
 
 A dialog a script shows is client-side: moonsamp shows it with
@@ -107,6 +107,7 @@ were dropped.
     test/run.sh         # opcode host, RakNet and the SA-MP opcodes under Wine,
                         # against gta_sa.exe's script engine and a mapped (not
                         # running) samp.dll with fake objects
+    test/run.sh "" samp-dlls/*/samp.dll    # the SA-MP tests on every build
 
 Release: commit, tag `v<VERSION>`, push the tag, then
 `python3 tools/release.py v<VERSION> "moonsamp <VERSION>" notes.md`. It builds
@@ -114,7 +115,11 @@ Release: commit, tag `v<VERSION>`, push the tag, then
 the GitLab release with a drop-in install link.
 
 `tools/find_offsets.py` locates SA-MP functions in other samp.dll builds from
-their R3-1 addresses (relocation-masked signatures).
+their R3-1 addresses (relocation-masked signatures; `REF=<build>` uses another
+build's). `tools/check_builds.py <dir>` derives every value in `src/builds.h`
+again from each build's own code and reports any that differ (needs pefile
+and capstone). R1 and R2 keep some functions in their protector's section,
+where it cannot read them; it says which values those are.
 
 ## License
 

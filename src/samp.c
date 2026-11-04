@@ -1,32 +1,8 @@
-/* SA-MP side: SAMPFUNCS's opcodes, implemented against samp.dll.
- *
- * Builds reorder their structs, so each one gets its own table. Offsets come
- * from SAMP-API (R3-1) and from tools/find_offsets.py and the build's own
- * code (0.3.DL). */
-#include "moonsamp.h"
-
-static const Build builds[] = {
-    { "0.3.7-R3-1", 0xCC4D0, 0x26E8DC, 0x26E8C8, 0x26E8CC,
-      0x679F0, 0x5820, 0x69190, 0xA6AF0,
-      0x0000, 0x0FB4, 0x0004, 0x2F1C, 0x2F22, 0x2F3A,
-      0x00, 0x0C, 0x00,
-      0x408E7, 0x3A6A0, 0x121914, 0x53A60, 0x53B90, 0x1EFF0, 0x1F190,
-      0x26E898, 0x26E8F4, 0x26E894, 0x6F8C0, 0x6FF40, 0x88760, 0x8A2E0, 0x84F40, 0x84E70,
-      0xA1E0, 0x9FFE0, 0xB5C0, 0x1E440, 0x3340, 0xB26D0, 0x04, 0x2F14,
-      0x8BA0, 0xADF00, 0x9C7C0, 0x105, 0x2F18, 0x24, 0x28 },
-    { "0.3.DL-R1", 0xFDB60, 0x2ACA24, 0x2ACA10, 0x2ACA14,
-      0x67BE0, 0x5860, 0x69340, 0xA6F70,
-      0x0022, 0x0FD6, 0x0026, 0x0000, 0x0006, 0x001E,
-      0x08, 0x14, 0x04,
-      0x40AE7, 0x3A8A0, 0x15FA54, 0x53C60, 0x53D90, 0x1F1F0, 0x1F390,
-      0x2AC9E0, 0x2ACA3C, 0x2AC9DC, 0x6FA50, 0x700D0, 0x888F0, 0x8A470, 0x850D0, 0x85000,
-      0xA230, 0xA0530, 0xB5E0, 0x1E650, 0x3390, 0xB2B60, 0x0C, 0x2F36,
-      0x8C00, 0xAE390, 0x9C950, 0x07C, 0x2F3A, 0x00, 0x04 },
-};
+/* SA-MP side: SAMPFUNCS's opcodes, implemented against samp.dll. Each
+ * build's addresses and offsets are in builds.h. */
+#include "builds.h"
 
 /* Shared by every supported build. */
-#define NETGAME_STATE   0x3CD
-#define NETGAME_POOLS   0x3DE
 #define SAMPPED_GAMEPED 0x2A4
 #define INPUT_PROCS     0x00C
 #define INPUT_NAMES     0x24C
@@ -84,13 +60,33 @@ void *samp_global(uint32_t rva) { return build() ? *(void **)(base + rva) : NULL
 void *samp_netgame(void) { return build() ? global(B->netgame) : NULL; }
 #define netgame samp_netgame
 
-void *samp_pool(int slot)
+void *samp_pool(int which)
 {
     void *ng = netgame(), *pools;
     if (!ng)
         return NULL;
-    pools = AT(ng, NETGAME_POOLS, void *);
-    return pools ? AT(pools, slot, void *) : NULL;
+    pools = AT(ng, B->ng_pools, void *);
+    return pools ? AT(pools, B->pool[which], void *) : NULL;
+}
+
+void *samp_rakclient(void)
+{
+    void *ng = netgame();
+    return ng ? AT(ng, B->ng_rakclient, void *) : NULL;
+}
+
+/* The game state as a GS_* index, or -1. */
+int samp_state(void)
+{
+    void *ng = netgame();
+    int st, i;
+    if (!ng)
+        return -1;
+    st = AT(ng, B->ng_state, int);
+    for (i = 0; i < GS_COUNT; i++)
+        if (B->state[i] == st)
+            return i;
+    return -1;
 }
 
 static void *player_pool(void) { return samp_pool(POOL_PLAYER); }
@@ -274,17 +270,17 @@ static void trace_state(void)
     now[0] = in ? AT(in, INPUT_ENABLED, int) : -1;
     now[1] = dlg ? AT(dlg, 0x28, int) : -1;
     now[2] = sb ? AT(sb, 0, int) : -1;
-    now[3] = g ? AT(g, 0x61, int) : -1;
-    now[4] = lp ? AT(lp, 0xF4, int) : -1;
-    now[5] = lp ? AT(lp, 0xF8, int) : -1;
-    now[6] = ng ? AT(ng, NETGAME_STATE, int) : -1;
+    now[3] = g ? AT(g, B->game_cursor, int) : -1;
+    now[4] = lp ? AT(lp, B->local_active, int) : -1;
+    now[5] = lp ? AT(lp, B->local_active + 4, int) : -1;
+    now[6] = ng ? AT(ng, B->ng_state, int) : -1;
     for (i = 0; i < 7; i++)
         changed |= now[i] != last[i];
     if (!changed)
         return;
     for (i = 0; i < 7; i++)
         last[i] = now[i];
-    ms_log("state: chat input %d, dialog %d, scoreboard %d, cursor %d, local +F4 %d +F8 %d, gamestate %d",
+    ms_log("state: chat input %d, dialog %d, scoreboard %d, cursor %d, local active %d wasted %d, gamestate %d",
            now[0], now[1], now[2], now[3], now[4], now[5], now[6]);
 }
 
@@ -382,11 +378,8 @@ void samp_tick(void)
     /* SA-MP asks for scores and pings only while the scoreboard is open;
      * SAMPFUNCS keeps them current, so ask as it would (every 3 s, throttled
      * by SA-MP itself). */
-    {
-        void *ng = netgame();
-        if (ng && AT(ng, NETGAME_STATE, int) == 5)
-            ((void (THISCALL *)(void *))(base + B->update_players))(ng);
-    }
+    if (samp_state() == GS_CONNECTED)
+        ((void (THISCALL *)(void *))(base + B->update_players))(netgame());
     if (script_trace) {
         trace_state();
         trace_input();
@@ -404,16 +397,9 @@ static int8_t __stdcall op_0AFA(Script *s)
 /* 0B4F samp %1d% = get_gamestate */
 static int8_t __stdcall op_0B4F(Script *s)
 {
-    void *ng = netgame();
-    int st = 0;
-    if (ng)
-        switch (AT(ng, NETGAME_STATE, int)) {
-        case 1: case 2: st = 1; break;   /* waiting / connecting */
-        case 6: st = 2; break;           /* awaiting join */
-        case 5: st = 3; break;           /* connected */
-        case 11: st = 4; break;          /* restarting */
-        }
-    ScriptParams[0].i = st;
+    static const int8_t to_sf[GS_COUNT] = { 1, 1, 3, 2, 4 };
+    int st = samp_state();
+    ScriptParams[0].i = st < 0 ? 0 : to_sf[st];
     script_store(s, 1);
     return 0;
 }
@@ -670,11 +656,7 @@ static int8_t __stdcall op_0B37(Script *s)
 
 /* ---- more player state (phase 2) ----------------------------------- */
 
-#define REMOTE_SPECIAL_ACTION 0x18
-#define REMOTE_ARMOUR         0x1AC
-#define REMOTE_HEALTH         0x1B0
-#define REMOTE_STATUS         0x1D1     /* 2: no sync for 1.5-3 s (paused) */
-#define LOCAL_ACTIVE          0xF4      /* set by CLocalPlayer::Spawn */
+#define REMOTE_PAUSED         2         /* status: no sync for 1.5-3 s */
 #define GTA_PED_HEALTH        0x540
 #define GTA_PED_ARMOUR        0x548
 #define GTA_ANIMATIONS        0xB4EA40  /* CAnimManager::ms_aAnimations */
@@ -701,7 +683,7 @@ static void store1(Script *s, int32_t v)
 static int8_t __stdcall op_0B61(Script *s)
 {
     void *lp = local_player();
-    script_cond(s, lp && AT(lp, LOCAL_ACTIVE, int));
+    script_cond(s, lp && AT(lp, B->local_active, int));
     return 0;
 }
 
@@ -749,7 +731,7 @@ static int8_t __stdcall op_0B57(Script *s)
     void *pp = player_pool(), *rp, *lp, *ped;
     if (pp) {
         if (id == local_id(pp)) {
-            if ((lp = local_player()) != NULL && (ped = AT(lp, 0, void *)) != NULL)
+            if ((lp = local_player()) != NULL && (ped = AT(lp, B->local_ped, void *)) != NULL)
                 anim = ((uint32_t (THISCALL *)(void *))(base + B->current_anim))(ped) & 0xFFFF;
         } else if ((rp = remote_player(pp, id)) != NULL) {
             anim = AT(rp, B->remote_anim, uint32_t) & 0xFFFF;
@@ -816,7 +798,7 @@ static int8_t __stdcall op_0B5C(Script *s)
     void *pp = player_pool(), *rp;
     /* status 2 also means "no sync yet": only a streamed ped can be paused */
     script_cond(s, pp && id != local_id(pp) && (rp = remote_player(pp, id)) &&
-                   remote_game_ped(pp, id) && AT(rp, REMOTE_STATUS, int) == 2);
+                   remote_game_ped(pp, id) && AT(rp, B->remote_status, int) == REMOTE_PAUSED);
     return 0;
 }
 
@@ -845,7 +827,7 @@ static int8_t health_or_armour(Script *s, int armour)
             if ((ped = FindPlayerPed(-1)) != NULL)
                 v = AT(ped, armour ? GTA_PED_ARMOUR : GTA_PED_HEALTH, float);
         } else if ((rp = remote_player(pp, id)) != NULL) {
-            v = AT(rp, armour ? REMOTE_ARMOUR : REMOTE_HEALTH, float);
+            v = AT(rp, B->remote_armour + (armour ? 0 : 4), float);
         }
     }
     store1(s, (int32_t)v);
@@ -867,7 +849,7 @@ static int8_t __stdcall op_0B62(Script *s)
             if ((lp = local_player()) != NULL)
                 v = (uint8_t)((SpecialFn)(base + B->special_action))(lp);
         } else if ((rp = remote_player(pp, id)) != NULL) {
-            v = AT(rp, REMOTE_SPECIAL_ACTION, uint8_t);
+            v = AT(rp, B->remote_special, uint8_t);
         }
     }
     store1(s, v);
@@ -931,7 +913,7 @@ static int8_t __stdcall op_0BDC(Script *s)
 static int8_t __stdcall op_0B8C(Script *s)
 {
     void *g = build() ? global(B->game) : NULL;
-    script_cond(s, g && AT(g, 0x61, int) != 0);
+    script_cond(s, g && AT(g, B->game_cursor, int) != 0);
     return 0;
 }
 
@@ -960,7 +942,7 @@ static int8_t __stdcall op_0B3A(Script *s)
     char *buf = (char *)(uintptr_t)script_int(s);
     void *ng = netgame();
     if (buf)
-        copy_string(buf, ng ? (const char *)ng + 0x131 : "", 257);
+        copy_string(buf, ng ? (const char *)ng + B->ng_host + 0x101 : "", 257);
     return 0;
 }
 
@@ -970,8 +952,8 @@ static int8_t __stdcall op_0B39(Script *s)
     char *buf = (char *)(uintptr_t)script_int(s);
     void *ng = netgame();
     if (buf)
-        copy_string(buf, ng ? (const char *)ng + 0x30 : "", 257);
-    store1(s, ng ? AT(ng, 0x235, int) : 0);
+        copy_string(buf, ng ? (const char *)ng + B->ng_host : "", 257);
+    store1(s, ng ? AT(ng, B->ng_host + 0x205, int) : 0);
     return 0;
 }
 
@@ -988,13 +970,13 @@ static int8_t __stdcall op_0B38(Script *s)
     copy_string(ip, p, sizeof ip);
     if (!ng || !ip[0])
         return 0;
-    if ((rc = AT(ng, 0x2C, void *)) != NULL)
+    if ((rc = samp_rakclient()) != NULL)
         ((DisconnectFn)(*(void ***)rc)[2])(rc, 500, 0);
     ((ResetFn)(base + B->shutdown_restart))(ng);
-    copy_string((char *)ng + 0x30, ip, 257);
-    AT(ng, 0x235, int) = port;
-    AT(ng, 0x3D1, uint32_t) = 0;        /* last connect attempt */
-    AT(ng, NETGAME_STATE, int) = 1;     /* waiting to connect */
+    copy_string((char *)ng + B->ng_host, ip, 257);
+    AT(ng, B->ng_host + 0x205, int) = port;
+    AT(ng, B->ng_state + 4, uint32_t) = 0;              /* last connect attempt */
+    AT(ng, B->ng_state, int) = B->state[GS_WAITING];
     return 0;
 }
 
@@ -1044,7 +1026,7 @@ static int8_t __stdcall op_0BDB(Script *s)
 static int8_t __stdcall op_0B8E(Script *s)
 {
     void *g = build() ? global(B->game) : NULL;
-    store1(s, g ? AT(g, 0x61, int) : 0);
+    store1(s, g ? AT(g, B->game_cursor, int) : 0);
     return 0;
 }
 
@@ -1081,7 +1063,7 @@ static int8_t __stdcall op_0C92(Script *s)
 
 /* 0B75 samp get_chat_string %1d% text_to %2d% prefix_to %3d% color_to %4d% prefix_color_to %5d%:
  * CChat's 100 lines start at +0x132, 0xFC bytes each (time, prefix[28],
- * text[144], ..., type, colour, prefix colour) in R3-1 and 0.3.DL */
+ * text[144], ..., type, colour, prefix colour) in every build */
 static int8_t __stdcall op_0B75(Script *s)
 {
     char *text, *prefix;

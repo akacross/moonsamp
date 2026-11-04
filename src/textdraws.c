@@ -1,6 +1,5 @@
 /* Textdraws and 3D texts. CTextDrawPool, CTextDraw and CLabelPool are laid out
- * the same in R3-1 and 0.3.DL (every offset below occurs equally often in
- * both). */
+ * the same in every supported build. */
 #include "moonsamp.h"
 
 #define TD_COUNT        2304
