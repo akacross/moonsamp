@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.1
+
+The console and dxut dialogs no longer slow the game down.
+
+**Fixed**
+
+- The console and dxut dialogs cost a twelfth of what they did each frame
+  (0.15 ms with a full console and a dialog on DXVK, from 1.8 ms): text is
+  drawn from a glyph texture made once, in one draw call a frame, instead
+  of D3DX laying out every string again, and only the states moonsamp
+  changes are saved and put back. d3dx9_43.dll is no longer needed.
+
 ## 0.7.0
 
 Every SA-MP 0.3.7 build and every opcode MoonLoader emits, with

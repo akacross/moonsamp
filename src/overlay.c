@@ -7,18 +7,18 @@
 #define COBJMACROS
 #include "moonsamp.h"
 #include <d3d9.h>
-#include <d3dx9core.h>
 
 typedef HRESULT (WINAPI *PresentFn)(IDirect3DDevice9 *, const RECT *, const RECT *, HWND, const RGNDATA *);
 typedef HRESULT (WINAPI *ResetFn)(IDirect3DDevice9 *, D3DPRESENT_PARAMETERS *);
-typedef HRESULT (WINAPI *CreateFontFn)(IDirect3DDevice9 *, INT, UINT, UINT, UINT, BOOL, DWORD, DWORD, DWORD,
-                                       DWORD, LPCSTR, ID3DXFont **);
 
-typedef struct { float x, y, z, rhw; DWORD color; } Vertex;
+typedef struct { float x, y, z, rhw; DWORD color; float u, v; } Vertex;
 
 #define SLOT_RESET   16
 #define SLOT_PRESENT 17
 #define RS_GLOBAL_PS 0xC17054       /* RsGlobal.ps; its window first */
+#define ATLAS_W      1024
+#define PAD          2              /* glyph cells reach past the advance */
+#define MAX_VERTS    (6 * 2048)
 
 static const struct { const char *face; int size, weight; } spec[FONT_COUNT] = {
     { "Arial", 16, FW_BOLD },           /* FONT_UI, at 1080 lines */
@@ -28,11 +28,16 @@ static const struct { const char *face; int size, weight; } spec[FONT_COUNT] = {
 static IDirect3DDevice9 *dev;
 static PresentFn orig_present;
 static ResetFn orig_reset;
-static CreateFontFn create_font;
-static ID3DXFont *fonts[FONT_COUNT];
-static int line_h[FONT_COUNT];
+/* Every glyph of both fonts and a white block for rects, drawn by GDI once
+ * per screen height into one managed texture, so a frame is one draw. */
+static IDirect3DTexture9 *atlas;
+static int atlas_h, atlas_failed, white_x, white_y;
+static int line_h[FONT_COUNT], char_w[FONT_COUNT][256];
+static short glyph_x[FONT_COUNT][256], glyph_y[FONT_COUNT][256];
+static Vertex verts[MAX_VERTS];
+static int vert_count, states_ready;
 static IDirect3DStateBlock9 *saved;
-static int width, height, font_basis, rect_ready;
+static int width, height, font_basis;
 static HWND window;
 static WNDPROC orig_wndproc;
 static DWORD wndproc_wait;
@@ -40,46 +45,206 @@ static DWORD wndproc_wait;
 int overlay_width(void) { return width; }
 int overlay_height(void) { return height; }
 
-static ID3DXFont *font(int f)
+/* Creates the fonts and places their glyphs; returns the rows used. */
+static int lay_out(HDC dc, HFONT *fonts)
 {
-    static int loaded;
-    if (!fonts[f] && !loaded) {
-        HMODULE m = LoadLibraryA("d3dx9_43.dll");
-        loaded = 1;
-        create_font = m ? (CreateFontFn)(void *)GetProcAddress(m, "D3DXCreateFontA") : NULL;
-        if (!create_font)
-            ms_log("overlay: d3dx9_43.dll has no D3DXCreateFontA, no text");
-    }
-    if (!fonts[f] && create_font && height) {
+    int f, c, x = 0, y = 0;
+    TEXTMETRICA tm;
+    for (f = 0; f < FONT_COUNT; f++) {
         int size = spec[f].size * height / 1080;
-        TEXTMETRICA tm;
         if (size < 12)
             size = 12;
-        if (FAILED(create_font(dev, size, 0, spec[f].weight, 1, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                               ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, spec[f].face, &fonts[f]))) {
-            fonts[f] = NULL;
-            create_font = NULL;
-            ms_log("overlay: D3DXCreateFontA failed, no text");
-            return NULL;
+        fonts[f] = CreateFontA(size, 0, 0, 0, spec[f].weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                               CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, spec[f].face);
+        if (!fonts[f])
+            return 0;
+        SelectObject(dc, fonts[f]);
+        if (!GetTextMetricsA(dc, &tm) || !GetCharWidth32A(dc, 0, 255, char_w[f]))
+            return 0;
+        line_h[f] = tm.tmHeight;
+        for (c = 0; c < 256; c++) {
+            if (c < 32)
+                char_w[f][c] = char_w[f][32];
+            if (x + char_w[f][c] + 2 * PAD > ATLAS_W) {
+                x = 0;
+                y += line_h[f];
+            }
+            glyph_x[f][c] = (short)x;
+            glyph_y[f][c] = (short)y;
+            if (c >= 32)
+                x += char_w[f][c] + 2 * PAD;
         }
-        line_h[f] = SUCCEEDED(ID3DXFont_GetTextMetricsA(fonts[f], &tm)) ? tm.tmHeight : size;
+        x = 0;
+        y += line_h[f];
     }
-    return fonts[f];
+    white_x = 0;
+    white_y = y;
+    return y + 4;
 }
 
-static void release_fonts(void)
+static void build_atlas(void)
 {
-    int i;
-    for (i = 0; i < FONT_COUNT; i++)
-        if (fonts[i]) {
-            ID3DXFont_Release(fonts[i]);
-            fonts[i] = NULL;
+    HFONT fonts[FONT_COUNT] = { 0 };
+    HDC dc = CreateCompatibleDC(NULL);
+    HBITMAP bmp = NULL;
+    uint32_t *bits = NULL;
+    D3DLOCKED_RECT lr;
+    int f, c, h = 0, y, x;
+    atlas_failed = 1;
+    if (!dc || !(h = lay_out(dc, fonts)))
+        goto done;
+    for (atlas_h = 64; atlas_h < h; atlas_h *= 2)
+        ;
+    {
+        BITMAPINFO bi;
+        memset(&bi, 0, sizeof bi);
+        bi.bmiHeader.biSize = sizeof bi.bmiHeader;
+        bi.bmiHeader.biWidth = ATLAS_W;
+        bi.bmiHeader.biHeight = -h;
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, (void **)&bits, NULL, 0);
+    }
+    if (!bmp || !bits)
+        goto done;
+    SelectObject(dc, bmp);
+    memset(bits, 0, (size_t)ATLAS_W * h * 4);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(255, 255, 255));
+    for (f = 0; f < FONT_COUNT; f++) {
+        SelectObject(dc, fonts[f]);
+        for (c = 33; c < 256; c++) {
+            char ch = (char)c;
+            TextOutA(dc, glyph_x[f][c] + PAD, glyph_y[f][c], &ch, 1);
         }
+    }
+    GdiFlush();
+    for (y = 0; y < 4; y++)
+        for (x = 0; x < 4; x++)
+            bits[(white_y + y) * ATLAS_W + white_x + x] = 0xFFFFFF;
+    if (FAILED(IDirect3DDevice9_CreateTexture(dev, ATLAS_W, atlas_h, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &atlas,
+                                              NULL))) {
+        atlas = NULL;
+        goto done;
+    }
+    if (FAILED(IDirect3DTexture9_LockRect(atlas, 0, &lr, NULL, 0))) {
+        IDirect3DTexture9_Release(atlas);
+        atlas = NULL;
+        goto done;
+    }
+    /* GDI's grey coverage becomes the alpha of white texels. */
+    for (y = 0; y < atlas_h; y++) {
+        uint32_t *row = (uint32_t *)((uint8_t *)lr.pBits + y * lr.Pitch);
+        for (x = 0; x < ATLAS_W; x++) {
+            uint32_t p = y < h ? bits[y * ATLAS_W + x] : 0, a = p & 0xFF;
+            if ((p >> 8 & 0xFF) > a)
+                a = p >> 8 & 0xFF;
+            if ((p >> 16 & 0xFF) > a)
+                a = p >> 16 & 0xFF;
+            row[x] = a << 24 | 0xFFFFFF;
+        }
+    }
+    IDirect3DTexture9_UnlockRect(atlas, 0);
+    atlas_failed = 0;
+done:
+    if (atlas_failed)
+        ms_log("overlay: could not draw the fonts, no text");
+    if (dc)
+        DeleteDC(dc);
+    if (bmp)
+        DeleteObject(bmp);
+    for (f = 0; f < FONT_COUNT; f++)
+        if (fonts[f])
+            DeleteObject(fonts[f]);
+}
+
+static void release_atlas(void)
+{
+    if (atlas) {
+        IDirect3DTexture9_Release(atlas);
+        atlas = NULL;
+    }
+    atlas_failed = 0;
+}
+
+static int ready(void)
+{
+    if (!atlas && !atlas_failed && dev && height)
+        build_atlas();
+    return atlas != NULL;
 }
 
 int overlay_line_height(int f)
 {
-    return font(f) ? line_h[f] : 14;
+    return ready() ? line_h[f] : 14;
+}
+
+static void set_states(void)
+{
+    IDirect3DDevice9_SetVertexShader(dev, NULL);
+    IDirect3DDevice9_SetPixelShader(dev, NULL);
+    IDirect3DDevice9_SetFVF(dev, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1);
+    IDirect3DDevice9_SetTexture(dev, 0, (IDirect3DBaseTexture9 *)atlas);
+    IDirect3DDevice9_SetTexture(dev, 1, NULL);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ZENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHABLENDENABLE, TRUE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_BLENDOP, D3DBLENDOP_ADD);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHATESTENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_LIGHTING, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_FOGENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_SCISSORTESTENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_SRGBWRITEENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_COLORWRITEENABLE, 0xF);
+    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_TEXCOORDINDEX, 0);
+    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
+    IDirect3DDevice9_SetTextureStageState(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    IDirect3DDevice9_SetTextureStageState(dev, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+    IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+    IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+    IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+    IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+    IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+    IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_SRGBTEXTURE, FALSE);
+    states_ready = 1;
+}
+
+static void flush(void)
+{
+    if (!vert_count)
+        return;
+    if (!states_ready)
+        set_states();
+    IDirect3DDevice9_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, vert_count / 3, verts, sizeof *verts);
+    vert_count = 0;
+}
+
+/* A w x h quad at x, y showing the atlas from tx, ty. */
+static void quad(int x, int y, int w, int h, int tx, int ty, int tw, int th, uint32_t argb)
+{
+    float l = x - 0.5f, t = y - 0.5f, r = l + w, b = t + h;
+    float u0 = (float)tx / ATLAS_W, v0 = (float)ty / atlas_h;
+    float u1 = (float)(tx + tw) / ATLAS_W, v1 = (float)(ty + th) / atlas_h;
+    Vertex *v;
+    if (vert_count + 6 > MAX_VERTS)
+        flush();
+    v = verts + vert_count;
+    v[0] = (Vertex){ l, t, 0, 1, argb, u0, v0 };
+    v[1] = (Vertex){ r, t, 0, 1, argb, u1, v0 };
+    v[2] = (Vertex){ l, b, 0, 1, argb, u0, v1 };
+    v[3] = v[1];
+    v[4] = (Vertex){ r, b, 0, 1, argb, u1, v1 };
+    v[5] = v[2];
+    vert_count += 6;
 }
 
 static int hexval(char c)
@@ -115,97 +280,54 @@ uint32_t overlay_color_at(const char *s, int n, uint32_t argb)
     return argb;
 }
 
-static int extent(ID3DXFont *f, const char *s, int n)
-{
-    SIZE sz;
-    return n > 0 && GetTextExtentPoint32A(ID3DXFont_GetDC(f), s, n, &sz) ? sz.cx : 0;
-}
-
 /* Width of the first n characters of s (n < 0: all of it), colour codes
  * taking none. */
 int overlay_text_width(int f, const char *s, int n)
 {
-    int raw = f & TEXT_RAW, w = 0, run = 0, i;
-    ID3DXFont *fo = font(f & 0xFF);
-    if (!fo)
+    int raw = f & TEXT_RAW, w = 0, i;
+    if (!ready())
         return 0;
+    f &= 0xFF;
     for (i = 0; s[i] && (n < 0 || i < n); i++) {
-        if (!raw && color_code(s + i) >= 0) {
-            w += extent(fo, s + i - run, run);
-            run = 0;
+        if (!raw && s[i] == '{' && color_code(s + i) >= 0)
             i += 7;
-            continue;
-        }
-        run++;
+        else
+            w += char_w[f][(uint8_t)s[i]];
     }
-    return w + extent(fo, s + i - run, run);
+    return w;
 }
 
 /* Draws s at x, y, cut off at x + max_w (max_w <= 0: not cut); returns the
  * width drawn. */
 int overlay_text(int f, int x, int y, const char *s, uint32_t argb, int max_w)
 {
-    int raw = f & TEXT_RAW, x0 = x, right = max_w > 0 ? x + max_w : 0x7FFF, start = 0, i;
-    ID3DXFont *fo = font(f &= 0xFF);
-    if (!fo || !dev)
+    int raw = f & TEXT_RAW, x0 = x, right = max_w > 0 ? x + max_w : 0x7FFF, i;
+    int32_t code;
+    if (!dev || !ready())
         return 0;
-    rect_ready = 0;
-    for (i = 0;; i++) {
-        int32_t code = s[i] && !raw ? color_code(s + i) : -1;
-        if (s[i] && code < 0)
+    f &= 0xFF;
+    for (i = 0; s[i]; i++) {
+        uint8_t c = (uint8_t)s[i];
+        int w = char_w[f][c];
+        if (!raw && c == '{' && (code = color_code(s + i)) >= 0) {
+            argb = (argb & 0xFF000000) | (uint32_t)code;
+            i += 7;
             continue;
-        if (i > start && x < right) {
-            RECT rc = { x, y, right, y + line_h[f] };
-            ID3DXFont_DrawTextA(fo, NULL, s + start, i - start, &rc, DT_LEFT | DT_TOP | DT_SINGLELINE, argb);
-            x += extent(fo, s + start, i - start);
         }
-        if (!s[i])
+        if (x + w > right)
             break;
-        argb = (argb & 0xFF000000) | (uint32_t)code;
-        i += 7;
-        start = i + 1;
+        if (c > ' ' && argb >> 24)
+            quad(x - PAD, y, w + 2 * PAD, line_h[f], glyph_x[f][c], glyph_y[f][c], w + 2 * PAD, line_h[f], argb);
+        x += w;
     }
-    return (x < right ? x : right) - x0;
-}
-
-static void rect_states(void)
-{
-    IDirect3DDevice9_SetVertexShader(dev, NULL);
-    IDirect3DDevice9_SetPixelShader(dev, NULL);
-    IDirect3DDevice9_SetFVF(dev, D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
-    IDirect3DDevice9_SetTexture(dev, 0, NULL);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_ZENABLE, FALSE);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHABLENDENABLE, TRUE);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHATESTENABLE, FALSE);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_LIGHTING, FALSE);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_FOGENABLE, FALSE);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_STENCILENABLE, FALSE);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_SCISSORTESTENABLE, FALSE);
-    IDirect3DDevice9_SetRenderState(dev, D3DRS_COLORWRITEENABLE, 0xF);
-    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
-    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
-    IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-    IDirect3DDevice9_SetTextureStageState(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE);
-    rect_ready = 1;
+    return x - x0;
 }
 
 void overlay_rect(int x, int y, int w, int h, uint32_t argb)
 {
-    Vertex v[4];
-    float l = x - 0.5f, t = y - 0.5f, r = l + w, b = t + h;
-    if (!dev || w <= 0 || h <= 0 || !(argb >> 24))
+    if (!dev || w <= 0 || h <= 0 || !(argb >> 24) || !ready())
         return;
-    if (!rect_ready)
-        rect_states();
-    v[0] = (Vertex){ l, t, 0, 1, argb };
-    v[1] = (Vertex){ r, t, 0, 1, argb };
-    v[2] = (Vertex){ l, b, 0, 1, argb };
-    v[3] = (Vertex){ r, b, 0, 1, argb };
-    IDirect3DDevice9_DrawPrimitiveUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof *v);
+    quad(x, y, w, h, white_x + 1, white_y + 1, 2, 2, argb);
 }
 
 void overlay_frame(int x, int y, int w, int h, uint32_t argb)
@@ -293,7 +415,7 @@ static void read_size(void)
     }
     IDirect3DSurface9_Release(bb);
     if (height != font_basis) {
-        release_fonts();
+        release_atlas();
         font_basis = height;
     }
 }
@@ -336,15 +458,24 @@ static void frame(void)
         read_size();
     if (!width || !(dxut_visible() || console_visible()))
         return;
-    if (!saved && FAILED(IDirect3DDevice9_CreateStateBlock(dev, D3DSBT_ALL, &saved))) {
-        saved = NULL;
-        return;
+    /* Only what the overlay sets is saved and put back, and stream 0, which
+     * DrawPrimitiveUP clears and RenderWare caches. */
+    if (!saved) {
+        if (FAILED(IDirect3DDevice9_BeginStateBlock(dev)))
+            return;
+        set_states();
+        IDirect3DDevice9_SetStreamSource(dev, 0, NULL, 0, 0);
+        if (FAILED(IDirect3DDevice9_EndStateBlock(dev, &saved))) {
+            saved = NULL;
+            return;
+        }
     }
     IDirect3DStateBlock9_Capture(saved);
     if (SUCCEEDED(IDirect3DDevice9_BeginScene(dev))) {
-        rect_ready = 0;
+        states_ready = 0;
         dxut_render();
         console_render();
+        flush();
         IDirect3DDevice9_EndScene(dev);
     }
     IDirect3DStateBlock9_Apply(saved);
@@ -357,24 +488,18 @@ static HRESULT WINAPI hook_present(IDirect3DDevice9 *d, const RECT *src, const R
     return orig_present(d, src, dst, w, dirty);
 }
 
-/* Reset needs every default-pool resource and state block let go first. */
+/* Reset needs every state block let go first; the atlas is managed and
+ * survives it. */
 static HRESULT WINAPI hook_reset(IDirect3DDevice9 *d, D3DPRESENT_PARAMETERS *pp)
 {
     HRESULT hr;
-    int i;
     if (d != dev)
         return orig_reset(d, pp);
-    for (i = 0; i < FONT_COUNT; i++)
-        if (fonts[i])
-            ID3DXFont_OnLostDevice(fonts[i]);
     if (saved) {
         IDirect3DStateBlock9_Release(saved);
         saved = NULL;
     }
     hr = orig_reset(d, pp);
-    for (i = 0; i < FONT_COUNT; i++)
-        if (fonts[i] && SUCCEEDED(hr))
-            ID3DXFont_OnResetDevice(fonts[i]);
     width = height = 0;
     return hr;
 }

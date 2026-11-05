@@ -10,7 +10,9 @@
 # Each samp.dll (any supported build) gets raknet_test, phase2_test and
 # overlay_test; with none given, the game folder's. test/run.sh ""
 # samp-dlls/*/samp.dll runs every build. overlay_test draws on a real
-# Direct3D 9 device; with SHOTS=dir its frames are saved there as .bmp.
+# Direct3D 9 device; with SHOTS=dir its frames are saved there as .bmp, and
+# with D3D9=path/to/d3d9.dll (DXVK's, say) it draws through that one, on the
+# GPU, and its frame time is checked.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(dirname "$here")"
@@ -66,6 +68,10 @@ open(sys.argv[2], 'wb').write(d)
 PY
 }
 cd "$work"
+if [ -n "${D3D9:-}" ]; then
+    cp "$D3D9" d3d9.dll
+    export WINEDLLOVERRIDES="d3d9=n"
+fi
 touch moonsamp.trace    # traced, as the user runs it: its bookkeeping is tested too
 status=0
 run() {

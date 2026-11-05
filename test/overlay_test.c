@@ -58,6 +58,7 @@ static void add(int code, int id, const char *text, int x, int y, int w, int h)
     op(code);
 }
 static int cond1(int code, int32_t a) { begin(); put_int(a); op(code); return COND == 1; }
+static void set1(int code, int32_t v) { begin(); put_int(dlg); put_int(v); op(code); }
 static int cond2(int code, int id) { begin(); put_int(dlg); put_int(id); op(code); return COND == 1; }
 static void set2(int code, int id, int32_t v) { begin(); put_int(dlg); put_int(id); put_int(v); op(code); }
 static int32_t get2(int code, int id) { begin(); put_int(dlg); put_int(id); put_local(0); op(code); return LOCAL(0); }
@@ -132,6 +133,50 @@ static int write_bmp(const char *path, const uint8_t *px, int pitch, int w, int 
         fwrite(px + y * pitch, 4, w, f);
     fclose(f);
     return 1;
+}
+
+/* Present as moonsamp's hook passes it on: what came before it in the call
+ * was the overlay. Draw calls are counted. */
+typedef HRESULT (WINAPI *PresentFn)(IDirect3DDevice9 *, const RECT *, const RECT *, HWND, const RGNDATA *);
+typedef HRESULT (WINAPI *DrawUpFn)(IDirect3DDevice9 *, D3DPRIMITIVETYPE, UINT, const void *, UINT);
+static PresentFn real_present;
+static DrawUpFn real_draw_up;
+static LARGE_INTEGER passed_on;
+static int draws;
+static HRESULT WINAPI inner_present(IDirect3DDevice9 *d, const RECT *a, const RECT *b, HWND w, const RGNDATA *r)
+{
+    QueryPerformanceCounter(&passed_on);
+    return real_present(d, a, b, w, r);
+}
+static HRESULT WINAPI count_draw_up(IDirect3DDevice9 *d, D3DPRIMITIVETYPE t, UINT n, const void *v, UINT stride)
+{
+    draws++;
+    return real_draw_up(d, t, n, v, stride);
+}
+static void patch_slot(void **slot, void *to)
+{
+    DWORD old;
+    VirtualProtect(slot, sizeof *slot, PAGE_EXECUTE_READWRITE, &old);
+    *slot = to;
+    VirtualProtect(slot, sizeof *slot, old, &old);
+}
+
+/* The overlay's mean time in count frames, in ms; *per_frame: its draws. */
+static double frame_ms(int count, int *per_frame)
+{
+    LARGE_INTEGER f, a;
+    double total = 0;
+    int i;
+    QueryPerformanceFrequency(&f);
+    draws = 0;
+    for (i = 0; i < count; i++) {
+        IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, CLEAR, 1.0f, 0);
+        QueryPerformanceCounter(&a);
+        IDirect3DDevice9_Present(dev, NULL, NULL, NULL, NULL);
+        total += (double)(passed_on.QuadPart - a.QuadPart);
+    }
+    *per_frame = draws / count;
+    return total * 1000.0 / (double)f.QuadPart / count;
 }
 
 /* One frame through Present (and so the overlay), saved to path; returns
@@ -249,6 +294,7 @@ __declspec(dllexport) int run(void)
         d3d = create ? create(D3D_SDK_VERSION) : NULL;
         pp.Windowed = TRUE;
         pp.SwapEffect = D3DSWAPEFFECT_COPY;
+        pp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
         pp.BackBufferFormat = D3DFMT_X8R8G8B8;
         pp.BackBufferWidth = W;
         pp.BackBufferHeight = H;
@@ -262,6 +308,10 @@ __declspec(dllexport) int run(void)
         set_global(base, L->device, dev);
     }
     vt = *(void ***)dev;
+    real_present = (PresentFn)vt[17];
+    real_draw_up = (DrawUpFn)vt[83];
+    patch_slot(&vt[17], (void *)inner_present);
+    patch_slot(&vt[83], (void *)count_draw_up);
     orig_present = vt[17];
 
     check(LoadLibraryA("moonsamp.asi") != NULL, "moonsamp.asi loads");
@@ -426,8 +476,60 @@ __declspec(dllexport) int run(void)
     SendMessageA(hwnd, WM_CHAR, '\t', 0);
 
     /* ---- frames ---- */
-    px = frame("overlay.bmp", 20, 20);
+    px = frame("overlay.bmp", 787, 20);
     check(px && darker(px), "a frame with both");
+    {
+        char line[240];
+        double open_ms, closed_ms;
+        int open_draws, closed_draws;
+        for (i = 0; i < 1000; i++) {
+            sprintf(line, "{A0A0A0}[12:00:00.%06d] (script)\tscroll line %d: {FFFFFF}long enough to wrap "
+                          "across the console {FF8080}in three colours, as real log lines do", (int)i, (int)i);
+            begin(); put_str(line); opbuf[n++] = 0; op(0x0B78);
+        }
+        open_ms = frame_ms(300, &open_draws);
+        key(VK_OEM_3);
+        SendMessageA(hwnd, WM_CHAR, '`', 0);
+        set1(0x0B86, 0);
+        closed_ms = frame_ms(300, &closed_draws);
+        set1(0x0B86, 1);
+        key(VK_OEM_3);
+        SendMessageA(hwnd, WM_CHAR, '`', 0);
+        printf("the overlay takes %.3f ms a frame with the console and a dialog open, %.3f ms with neither\n",
+               open_ms, closed_ms);
+        check(open_draws == 1 && closed_draws == 0, "the console and a dialog: one draw a frame, none when closed");
+        /* Wine's own d3d9 draws in software here, which a frame waits on. */
+        if (GetEnvironmentVariableA("D3D9", NULL, 0))
+            check(open_ms < 0.5, "the console and a dialog take under 0.5 ms a frame");
+    }
+    {
+        IDirect3DVertexBuffer9 *vb = NULL, *got = NULL;
+        UINT off = 1, stride = 0;
+        DWORD blend = 1, src = 0, fvf = 0, op = 0, filter = 0;
+        int d;
+        IDirect3DDevice9_CreateVertexBuffer(dev, 64, 0, 0, D3DPOOL_MANAGED, &vb, NULL);
+        IDirect3DDevice9_SetStreamSource(dev, 0, vb, 0, 16);
+        IDirect3DDevice9_SetRenderState(dev, D3DRS_ALPHABLENDENABLE, FALSE);
+        IDirect3DDevice9_SetRenderState(dev, D3DRS_SRCBLEND, D3DBLEND_ONE);
+        IDirect3DDevice9_SetFVF(dev, D3DFVF_XYZ);
+        IDirect3DDevice9_SetTextureStageState(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
+        IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+        frame_ms(1, &d);
+        IDirect3DDevice9_GetStreamSource(dev, 0, &got, &off, &stride);
+        IDirect3DDevice9_GetRenderState(dev, D3DRS_ALPHABLENDENABLE, &blend);
+        IDirect3DDevice9_GetRenderState(dev, D3DRS_SRCBLEND, &src);
+        IDirect3DDevice9_GetFVF(dev, &fvf);
+        IDirect3DDevice9_GetTextureStageState(dev, 0, D3DTSS_COLOROP, &op);
+        IDirect3DDevice9_GetSamplerState(dev, 0, D3DSAMP_MAGFILTER, &filter);
+        check(d == 1 && got == vb && off == 0 && stride == 16 && !blend && src == D3DBLEND_ONE && fvf == D3DFVF_XYZ &&
+              op == D3DTOP_SELECTARG2 && filter == D3DTEXF_LINEAR,
+              "a frame puts the game's states back, stream 0 too");
+        if (got)
+            IDirect3DVertexBuffer9_Release(got);
+        IDirect3DDevice9_SetStreamSource(dev, 0, NULL, 0, 0);
+        if (vb)
+            IDirect3DVertexBuffer9_Release(vb);
+    }
     {
         D3DPRESENT_PARAMETERS pp = { 0 };
         pp.Windowed = TRUE;
