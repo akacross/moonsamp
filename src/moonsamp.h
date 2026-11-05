@@ -67,6 +67,7 @@ typedef struct {
     /* globals holding the object pointers */
     uint32_t netgame, chat, input, dialog, game, scoreboard, string_compressor, death_window;
     uint32_t sendrates;             /* on-foot, in-car and aim send rates (ints) */
+    uint32_t device;                /* the real IDirect3DDevice9 behind SA-MP's proxy */
     /* functions */
     uint32_t add_message;           /* CChat::AddMessage(color, text) */
     uint32_t local_chat;            /* CLocalPlayer::Chat(text) */
@@ -126,6 +127,9 @@ void *samp_global(uint32_t rva);
 void *samp_pool(int which);
 void *samp_rakclient(void);
 void *samp_rakpeer(void);
+int samp_cursor_mode(void);
+void samp_set_cursor_mode(int mode);
+int samp_typing(void);
 int samp_state(void);
 void *samp_local_player(void);
 void *samp_remote_player(int id);
@@ -133,6 +137,7 @@ int samp_vehicle_id(int handle);
 int samp_install(void);
 void samp_tick(void);
 void copy_string(char *dst, const char *src, size_t size);
+#define ML_BUFFER 4096 /* MoonLoader's text_to buffers */
 void samp_run_command(Script *s, int32_t label, const char *params);
 uint32_t abgr_argb(uint32_t c);
 
@@ -154,8 +159,40 @@ void sends_install(void);
 /* info.c */
 void info_install(void);
 
+/* overlay.c */
+enum { FONT_UI, FONT_CONSOLE, FONT_COUNT };
+#define TEXT_RAW 0x100              /* or'd into a font: colour codes are text */
+enum { EDIT_HANDLED = 1, EDIT_CHANGED = 2, EDIT_ENTER = 4 };
+typedef struct { char text[256]; int len, caret, scroll; } EditLine;
+void overlay_tick(void);
+int overlay_width(void);
+int overlay_height(void);
+int overlay_line_height(int font);
+int overlay_text_width(int font, const char *s, int n);
+uint32_t overlay_color_at(const char *s, int n, uint32_t argb);
+int overlay_text(int font, int x, int y, const char *s, uint32_t argb, int max_w);
+void overlay_rect(int x, int y, int w, int h, uint32_t argb);
+void overlay_frame(int x, int y, int w, int h, uint32_t argb);
+void overlay_cursor(int *x, int *y);
+void overlay_point(UINT msg, LPARAM lp, int *x, int *y);
+HWND overlay_window(void);
+int edit_key(EditLine *e, UINT msg, WPARAM wp);
+void edit_set(EditLine *e, const char *text);
+void edit_draw(EditLine *e, int font, int x, int y, int w, uint32_t argb, int focused);
+
+/* dxut.c */
+void dxut_install(void);
+int dxut_visible(void);
+void dxut_render(void);
+int dxut_input(UINT msg, WPARAM wp, LPARAM lp);
+
 /* console.c */
 void console_install(void);
+int console_visible(void);
+void console_render(void);
+int console_input(UINT msg, WPARAM wp, LPARAM lp);
+void console_print(const char *line);
+void console_tick(void);
 
 /* raknet.c */
 void raknet_install(void);

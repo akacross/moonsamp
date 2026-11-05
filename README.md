@@ -68,9 +68,9 @@ build's addresses and offsets are in `src/builds.h`.
 | 0B41 / 0B42 / 0B8A / 0B8B | raknetSendRpc(Ex) / raknetSendBitStream(Ex) |
 | 0BF6 / 0BF7 | raknetEmulRpcReceiveBitStream / raknetEmulPacketReceiveBitStream |
 | 0BFC / 0BFD / 0C5F / 0C60 / 0C61 | Set/GetSampfuncsGlobalVar, isSampfuncsGlobalVarDefined, access (every script may read and write) |
-| 0B78 / 0C7E | sampfuncsLog (to moonsamp.log), isSampfuncsConsoleActive (always false: no console window) |
+| 0B78 / 0C7E | sampfuncsLog (to the console and moonsamp.log), isSampfuncsConsoleActive |
 | 0C62 / 0C63 / 0C64 / 0C91 | runSampfuncsConsoleCommand, sampfuncsRegister/UnregisterConsoleCommand, isSampfuncsConsoleCommandDefined |
-| 0C7F / 0C80 | command descriptions (accepted, unused) |
+| 0C7F / 0C80 | command descriptions (console ones shown by `help`) |
 | 0AF7, 0B7A-0B7F, 0BAC-0BB9, 0B24 | sampGetBase, RakClient / RakPeer and its functions and RPC nodes, every SA-MP object and pool pointer, sampGetPlayerStructPtr |
 | 0B50-0B53 | object and pickup handles by SA-MP id and back |
 | 0B54 / 0B5B / 0BD7 / 0BD8 | dialog listbox item count and text, dialog text and caption |
@@ -87,8 +87,23 @@ build's addresses and offsets are in `src/builds.h`.
 | 0AAA / 0AB3 / 0AB4 | getScmThreadStructNamed, CLEO shared variables (without CLEO; with it, CLEO's own) |
 | 0A92 / 0A94 | CLEO scripts: false without CLEO |
 | 0AA5 | call_function (CLEO; used by the callback stubs) |
+| 0B80-0B89, 0B90-0BAB | the dxut* script dialogs: buttons, checkboxes, edit boxes, statics, sliders, list boxes, DXUT's events |
 
-Not covered yet: the dxut* functions (0B80-0BAB), SAMPFUNCS's own dialogs.
+Every opcode MoonLoader emits is covered.
+
+The console opens with `~` (Esc or `~` closes it) over the top left of the
+screen. It shows moonloader.log as MoonLoader writes it, so it needs no
+script, and what scripts send with sampfuncsLog; scriptHelper's copies of
+moonloader.log (`[ML] ...`) are left out, so nothing shows twice. MoonLoader's
+debug lines are hidden until `debug`. Typed lines run console commands;
+`help` lists them, `clear` empties it. Up / Down recall typed lines, Tab
+completes a command name, PgUp / PgDn and the wheel scroll. While open it
+shows SA-MP's cursor, which holds the camera and controls.
+
+Script dialogs and the console are drawn on SA-MP's real Direct3D device
+(`device` in `src/builds.h`), in its Present: after SA-MP's own UI. A dialog
+takes the mouse only while SA-MP's cursor is shown, and the keyboard while
+one of its edit boxes or list boxes has focus.
 
 RakNet hooks: RakClientInterface vtable slots Send (6), Receive (8),
 DeallocatePacket (9) and RPC (25), and the call to RakPeer::HandleRPCPacket

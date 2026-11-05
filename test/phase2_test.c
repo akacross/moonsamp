@@ -648,8 +648,11 @@ __declspec(dllexport) int run(void)
         AT(listbox, 0x14C, char **) = items;
         AT(listbox, 0x150, int) = 2;
         check(op_out(0x0B54) == 2, "0B54 listbox item count");
-        check(strcmp((char *)(uintptr_t)op_int(0x0B5B, 1), "Second") == 0 && *(char *)(uintptr_t)op_int(0x0B5B, 5) == 0,
-              "0B5B item 1's text, nothing past the end");
+        static char text[4096];
+        begin(); put_int(1); put_int((int32_t)(uintptr_t)text); op(0x0B5B);
+        check(strcmp(text, "Second") == 0, "0B5B item 1's text, into the buffer");
+        begin(); put_int(5); put_int((int32_t)(uintptr_t)text); op(0x0B5B);
+        check(text[0] == 0, "nothing past the end");
         AT(rak.peer, 0x801 + 61 * 4, void *) = node;
         AT(node, 1, void *) = (void *)0x12345678;
         check(op_out(0x0B7B) == (int32_t)(uintptr_t)rak.peer && op_int(0x0B7E, 61) == (int32_t)(uintptr_t)node &&

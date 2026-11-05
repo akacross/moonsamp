@@ -382,6 +382,61 @@ local function more()
     check('sampForceOnfootSync / sampForceStatsSync ran', true)
 end
 
+-- A dxut dialog, hidden from the start and deleted at the end.
+local function dxut()
+    local d = get('dxutCreateDialog', 'moonsamp self-test')
+    check('dxutCreateDialog gives a dialog', d ~= nil and d ~= 0)
+    if not d or d == 0 then return end
+    dxutSetDialogVisible(d, false)
+    check('dxutIsDialogExists', get('dxutIsDialogExists', d) == true)
+    check('dxutIsDialogVisible false after hiding', get('dxutIsDialogVisible', d) == false)
+    dxutSetDialogPos(d, 100, 120, 300, 200)
+    local x, y, w, h = get('dxutGetDialogPosAndSize', d)
+    check('dxutSetDialogPos / GetDialogPosAndSize', x == 100 and y == 120 and w == 300 and h == 200,
+        string.format('%s %s %s %s', tostring(x), tostring(y), tostring(w), tostring(h)))
+    dxutAddButton(d, 1, 'OK', 10, 10, 80, 25)
+    dxutAddCheckbox(d, 2, 'Check', 10, 40, 120, 20)
+    dxutAddEditbox(d, 3, 'abc', 10, 70, 150, 22)
+    dxutAddStatic(d, 4, 'Static', 100, 10, 100, 25)
+    dxutAddSlider(d, 5, 10, 100, 150, 20, 10)
+    dxutAddListbox(d, 6, 10, 130, 200, 60)
+    check('dxutGetControlText', get('dxutGetControlText', d, 3) == 'abc')
+    dxutSetControlText(d, 1, 'Go')
+    check('dxutSetControlText', get('dxutGetControlText', d, 1) == 'Go')
+    dxutCheckboxSetChecked(d, 2, true)
+    check('dxutCheckboxSetChecked / IsCheckboxChecked', get('dxutIsCheckboxChecked', d, 2) == true)
+    dxutSetSliderValue(d, 5, 7)
+    check('dxutSetSliderValue / GetSliderValue', get('dxutGetSliderValue', d, 5) == 7)
+    dxutListboxInsertItem(d, 6, 'one', 11, -1)
+    dxutListboxInsertItem(d, 6, 'two', 22, -1)
+    local sel, count = get('dxutGetListboxSelectedItemAndCount', d, 6)
+    check('dxutListboxInsertItem / count', count == 2, tostring(sel) .. ' ' .. tostring(count))
+    local text, data = get('dxutGetListboxItemTextAndData', d, 6, 1)
+    check('dxutGetListboxItemTextAndData', text == 'two' and data == 22, tostring(text) .. ' ' .. tostring(data))
+    dxutListboxDeleteItem(d, 6, 0)
+    sel, count = get('dxutGetListboxSelectedItemAndCount', d, 6)
+    check('dxutListboxDeleteItem', count == 1)
+    dxutSetControlVisible(d, 4, false)
+    check('dxutSetControlVisible / ControlIsVisible', get('dxutControlIsVisible', d, 4) == false)
+    dxutSetControlSize(d, 4, 120, 30)
+    dxutSetControlPos(d, 4, 105, 12)
+    local cw, ch = get('dxutGetControlSize', d, 4)
+    local cx, cy = get('dxutGetControlPos', d, 4)
+    check('dxutSet/GetControlSize and Pos', cw == 120 and ch == 30 and cx == 105 and cy == 12)
+    dxutEnableDialogCaption(d, false)
+    check('dxutEnableDialogCaption / IsDialogCaptionEnabled', get('dxutIsDialogCaptionEnabled', d) == false)
+    dxutSetDialogMinimized(d, true)
+    check('dxutSetDialogMinimized / IsDialogMinimized', get('dxutIsDialogMinimized', d) == true)
+    dxutSetDialogBackgroundColor(d, 0xC0202020)
+    dxutSetCheckboxColor(d, 2, 0xFFFF0000)
+    dxutSetFocusOnControl(d, 3)
+    check('dxutPopEvent: none', get('dxutPopEvent', d) == false)
+    dxutDeleteControl(d, 4)
+    check('dxutDeleteControl', get('dxutGetControlText', d, 4) == '')
+    dxutDeleteDialog(d)
+    check('dxutDeleteDialog', get('dxutIsDialogExists', d) == false)
+end
+
 local function write()
     local path = getWorkingDirectory() .. '\\logs\\moonsamp_selftest-' .. provider .. '.log'
     local f = io.open(path, 'w')
@@ -403,7 +458,7 @@ function main()
     else provider = 'none' end
     while not sampIsLocalPlayerSpawned() do wait(500) end
     wait(5000)
-    for _, section in ipairs{ state, globals, bitstreams, players, vehicles, textdraws, more } do
+    for _, section in ipairs{ state, globals, bitstreams, players, vehicles, textdraws, more, dxut } do
         local ok, err = pcall(section)
         if not ok then out[#out + 1] = 'ERROR section: ' .. tostring(err) end
     end

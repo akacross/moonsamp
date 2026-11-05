@@ -209,16 +209,17 @@ static int8_t __stdcall op_0B54(Script *s)
     return 0;
 }
 
-/* 0B5B samp get_listbox_item %1d% text_to %2d% */
+/* 0B5B samp get_listbox_item %1d% text_to %2d%: into MoonLoader's buffer */
 static int8_t __stdcall op_0B5B(Script *s)
 {
-    static char empty[1];
     int i = script_int(s);
+    char *buf = (char *)(uintptr_t)script_int(s);
     uint8_t *lb = dialog_listbox();
-    char *text = empty;
+    const char *text = NULL;
     if (lb && i >= 0 && i < AT(lb, LB_COUNT, int) && AT(lb, LB_ITEMS, char **))
         text = AT(lb, LB_ITEMS, char **)[i];
-    store_ptr(s, text ? text : empty);
+    if (buf)
+        copy_string(buf, text ? text : "", ML_BUFFER);
     return 0;
 }
 
@@ -289,13 +290,7 @@ static int8_t __stdcall op_0B74(Script *s)
  * SA-MP's input re-enabling, as SAMPFUNCS does */
 static int8_t __stdcall op_0B5D(Script *s)
 {
-    int show = script_int(s) != 0;
-    void *g = b() ? samp_global(b()->game) : NULL;
-    if (!g)
-        return 0;
-    ((void (THISCALL *)(void *, int, int))fn(b()->set_cursor_mode))(g, show ? CURSOR_LOCKCAM : 0, !show);
-    if (!show)
-        ((void (THISCALL *)(void *))fn(b()->process_input))(g);
+    samp_set_cursor_mode(script_int(s) ? CURSOR_LOCKCAM : 0);
     return 0;
 }
 

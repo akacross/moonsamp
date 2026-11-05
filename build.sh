@@ -29,7 +29,7 @@ trap 'rm -rf "$TMP"' EXIT
     -Wl,--kill-at \
     -Wl,--no-insert-timestamp \
     -Wl,--disable-auto-image-base \
-    -luser32 -lkernel32 -lgcc
+    -luser32 -lkernel32 -lgdi32 -lgcc
 cp "$TMP/moonsamp.asi" "$OUT"
 
 echo "built $OUT"

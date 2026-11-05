@@ -20,7 +20,7 @@ static const Build builds[] = {
     {
         .name = "0.3.7-R1", .entry = 0x31DF13,
         .netgame = 0x21A0F8, .chat = 0x21A0E4, .input = 0x21A0E8, .dialog = 0x21A0B8,
-        .game = 0x21A10C, .scoreboard = 0x21A0B4, .string_compressor = 0x10D894, .death_window = 0x21A0EC, .sendrates = 0xEC0A8,
+        .game = 0x21A10C, .scoreboard = 0x21A0B4, .string_compressor = 0x10D894, .death_window = 0x21A0EC, .sendrates = 0xEC0A8, .device = 0x21A0A8,
         .add_message = 0x645A0, .local_chat = 0x57F0, .send_command = 0x65C60, .player_color = 0xAD570,
         .handle_rpc_call = 0x3D537, .handle_rpc = 0x372F0,
         .encode_string = 0x506B0, .decode_string = 0x507E0, .bs_ctor = 0x1BC40, .bs_dtor = 0x1BDE0,
@@ -44,7 +44,7 @@ static const Build builds[] = {
     {
         .name = "0.3.7-R2", .entry = 0x3195DD,
         .netgame = 0x21A100, .chat = 0x21A0EC, .input = 0x21A0F0, .dialog = 0x21A0C0,
-        .game = 0x21A114, .scoreboard = 0x21A0BC, .string_compressor = 0x10D894, .death_window = 0x21A0F4, .sendrates = 0xEC0A8,
+        .game = 0x21A114, .scoreboard = 0x21A0BC, .string_compressor = 0x10D894, .death_window = 0x21A0F4, .sendrates = 0xEC0A8, .device = 0x21A0B0,
         .add_message = 0x64670, .local_chat = 0x57E0, .send_command = 0x65D30, .player_color = 0xAD740,
         .handle_rpc_call = 0x3D617, .handle_rpc = 0x373D0,
         .encode_string = 0x50790, .decode_string = 0x508C0, .bs_ctor = 0x1BD20, .bs_dtor = 0x1BEC0,
@@ -68,7 +68,7 @@ static const Build builds[] = {
     {
         .name = "0.3.7-R3", .entry = 0xCC490,
         .netgame = 0x26E8DC, .chat = 0x26E8C8, .input = 0x26E8CC, .dialog = 0x26E898,
-        .game = 0x26E8F4, .scoreboard = 0x26E894, .string_compressor = 0x121914, .death_window = 0x26E8D0, .sendrates = 0xFE0A8,
+        .game = 0x26E8F4, .scoreboard = 0x26E894, .string_compressor = 0x121914, .death_window = 0x26E8D0, .sendrates = 0xFE0A8, .device = 0x26E888,
         .add_message = 0x679F0, .local_chat = 0x5820, .send_command = 0x69190, .player_color = 0xA6AB0,
         .handle_rpc_call = 0x408E7, .handle_rpc = 0x3A6A0,
         .encode_string = 0x53A60, .decode_string = 0x53B90, .bs_ctor = 0x1EFF0, .bs_dtor = 0x1F190,
@@ -92,7 +92,7 @@ static const Build builds[] = {
     {
         .name = "0.3.7-R3-1", .entry = 0xCC4D0,
         .netgame = 0x26E8DC, .chat = 0x26E8C8, .input = 0x26E8CC, .dialog = 0x26E898,
-        .game = 0x26E8F4, .scoreboard = 0x26E894, .string_compressor = 0x121914, .death_window = 0x26E8D0, .sendrates = 0xFE0A8,
+        .game = 0x26E8F4, .scoreboard = 0x26E894, .string_compressor = 0x121914, .death_window = 0x26E8D0, .sendrates = 0xFE0A8, .device = 0x26E888,
         .add_message = 0x679F0, .local_chat = 0x5820, .send_command = 0x69190, .player_color = 0xA6AF0,
         .handle_rpc_call = 0x408E7, .handle_rpc = 0x3A6A0,
         .encode_string = 0x53A60, .decode_string = 0x53B90, .bs_ctor = 0x1EFF0, .bs_dtor = 0x1F190,
@@ -116,7 +116,7 @@ static const Build builds[] = {
     {
         .name = "0.3.7-R4", .entry = 0xCBCB0,
         .netgame = 0x26EA0C, .chat = 0x26E9F8, .input = 0x26E9FC, .dialog = 0x26E9C8,
-        .game = 0x26EA24, .scoreboard = 0x26E9C4, .string_compressor = 0x121A3C, .death_window = 0x26EA00, .sendrates = 0xFE0A8,
+        .game = 0x26EA24, .scoreboard = 0x26E9C4, .string_compressor = 0x121A3C, .death_window = 0x26EA00, .sendrates = 0xFE0A8, .device = 0x26E9B8,
         .add_message = 0x68130, .local_chat = 0x5A00, .send_command = 0x698C0, .player_color = 0xA7240,
         .handle_rpc_call = 0x40FD7, .handle_rpc = 0x3AD90,
         .encode_string = 0x54150, .decode_string = 0x54280, .bs_ctor = 0x1F6E0, .bs_dtor = 0x1F880,
@@ -140,7 +140,7 @@ static const Build builds[] = {
     {
         .name = "0.3.7-R5", .entry = 0xCBC90,
         .netgame = 0x26EB94, .chat = 0x26EB80, .input = 0x26EB84, .dialog = 0x26EB50,
-        .game = 0x26EBAC, .scoreboard = 0x26EB4C, .string_compressor = 0x121A3C, .death_window = 0x26EB88, .sendrates = 0xFE0A8,
+        .game = 0x26EBAC, .scoreboard = 0x26EB4C, .string_compressor = 0x121A3C, .death_window = 0x26EB88, .sendrates = 0xFE0A8, .device = 0x26EB40,
         .add_message = 0x68170, .local_chat = 0x5A10, .send_command = 0x69900, .player_color = 0xA7230,
         .handle_rpc_call = 0x41027, .handle_rpc = 0x3ADE0,
         .encode_string = 0x541A0, .decode_string = 0x542D0, .bs_ctor = 0x1F730, .bs_dtor = 0x1F8D0,
@@ -164,7 +164,7 @@ static const Build builds[] = {
     {
         .name = "0.3.DL-R1", .entry = 0xFDB60,
         .netgame = 0x2ACA24, .chat = 0x2ACA10, .input = 0x2ACA14, .dialog = 0x2AC9E0,
-        .game = 0x2ACA3C, .scoreboard = 0x2AC9DC, .string_compressor = 0x15FA54, .death_window = 0x2ACA18, .sendrates = 0x13C0A8,
+        .game = 0x2ACA3C, .scoreboard = 0x2AC9DC, .string_compressor = 0x15FA54, .death_window = 0x2ACA18, .sendrates = 0x13C0A8, .device = 0x2AC9D0,
         .add_message = 0x67BE0, .local_chat = 0x5860, .send_command = 0x69340, .player_color = 0xA6F70,
         .handle_rpc_call = 0x40AE7, .handle_rpc = 0x3A8A0,
         .encode_string = 0x53C60, .decode_string = 0x53D90, .bs_ctor = 0x1F1F0, .bs_dtor = 0x1F390,

@@ -278,6 +278,11 @@ def derive(b, row31):
                                   for i in ins(img, a, 0x30) if '[0x' in i.op_str)
     callers = img.callers(d['handle_rpc']) if d['handle_rpc'] else []
     d['handle_rpc_call'] = callers[0] if len(callers) == 1 else None
+    # SA-MP's IDirect3DDevice9 proxy forwards each method as mov eax, [device]; mov ecx, [eax]
+    stubs = collections.Counter(int.from_bytes(m.group(1), 'little') - img.base
+                                for m in re.finditer(rb'\xA1(....)\x8B\x08', img.data[img.lo:img.hi], re.S))
+    top = stubs.most_common(2)
+    d['device'] = top[0][0] if top and top[0][1] > 100 and (len(top) < 2 or top[1][1] < 50) else None
     return d
 
 

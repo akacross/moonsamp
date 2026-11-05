@@ -163,7 +163,7 @@ __declspec(dllexport) int run(void)
     LOCAL(0) = 0x1234;
     LOCAL(8) = 0x1234;
     LOCAL(31) = 0x1234;
-    call(0x0B99, 0);
+    call(0x0CFE, 0);
     check(COND == 0, "an unimplemented opcode returns false");
     check(LOCAL(0) != 0x1234 && *(const char *)(uintptr_t)LOCAL(0) == 0 &&
           LOCAL(8) == LOCAL(0) && LOCAL(31) == LOCAL(0),
@@ -324,7 +324,7 @@ __declspec(dllexport) int run(void)
         fclose(f);
     }
     check(strstr(log, "opcode table installed") != NULL, "log: opcode table installed");
-    check(strstr(log, "opcode 0B99 is not implemented") != NULL, "log: unimplemented opcode named once");
+    check(strstr(log, "opcode 0CFE is not implemented") != NULL, "log: unimplemented opcode named once");
     check(strstr(log, "ready") != NULL, "log: ready");
     check(strstr(log, "console: hello world") != NULL, "log: sampfuncsLog without colour tags");
     check(strstr(log, "mirrored line") == NULL, "log: MoonLoader's own mirrored lines left out");

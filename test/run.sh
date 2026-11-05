@@ -7,9 +7,10 @@
 #
 #   test/run.sh [path/to/gta_sa.exe] [samp.dll...]
 #
-# Each samp.dll (any supported build) gets raknet_test and phase2_test; with
-# none given, the game folder's. test/run.sh "" samp-dlls/*/samp.dll runs
-# every build.
+# Each samp.dll (any supported build) gets raknet_test, phase2_test and
+# overlay_test; with none given, the game folder's. test/run.sh ""
+# samp-dlls/*/samp.dll runs every build. overlay_test draws on a real
+# Direct3D 9 device; with SHOTS=dir its frames are saved there as .bmp.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(dirname "$here")"
@@ -20,9 +21,10 @@ shift || true
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 export WINEPREFIX="$work/prefix" WINEDEBUG=-all
 OUT="$work/moonsamp.asi" "$root/build.sh" >/dev/null
-for t in host_test raknet_test phase2_test; do
+for t in host_test raknet_test phase2_test overlay_test; do
     i686-w64-mingw32-gcc -O2 -Wall -shared -static -o "$work/$t.dll" "$here/$t.c"
 done
+i686-w64-mingw32-gcc -O2 -Wall -shared -o "$work/MoonLoader.asi" "$here/fake_moonloader.c"
 patch_exe() {
 python3 -I - "$exe" "$work/$1.exe" "$1.dll" <<'PY'
 import struct, sys
@@ -80,6 +82,14 @@ for dll in "$@"; do
     cp "$dll" samp.dll
     run raknet_test "$dll"
     run phase2_test "$dll"
+    rm -rf moonloader
+    run overlay_test "$dll"
+    if [ -n "${SHOTS:-}" ]; then
+        mkdir -p "$SHOTS"
+        for f in overlay*.bmp; do
+            [ -e "$f" ] && cp "$f" "$SHOTS/$(basename "$(dirname "$dll")")-$f"
+        done
+    fi
 done
 [ ${#failed[@]} -eq 0 ] && echo "all passed" || printf 'FAILED: %s\n' "${failed[@]}"
 exit $status

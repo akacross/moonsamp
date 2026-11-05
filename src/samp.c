@@ -8,6 +8,7 @@
 #define INPUT_NAMES     0x24C
 #define INPUT_COUNT     0x14DC
 #define INPUT_ENABLED   0x14E0
+#define DIALOG_SHOWN    0x28
 #define MAX_COMMANDS    144
 #define MAX_PLAYERS     1004
 
@@ -73,6 +74,32 @@ void *samp_rakclient(void)
 {
     void *ng = netgame();
     return ng ? AT(ng, B->ng_rakclient, void *) : NULL;
+}
+
+/* SA-MP's cursor mode (0: hidden), or -1 before SA-MP is up. */
+int samp_cursor_mode(void)
+{
+    void *g = build() ? global(B->game) : NULL;
+    return g ? AT(g, B->game_cursor, int) : -1;
+}
+
+/* As sampToggleCursor: SetCursorMode, and SA-MP's input re-enabling when
+ * the cursor goes. */
+void samp_set_cursor_mode(int mode)
+{
+    void *g = build() ? global(B->game) : NULL;
+    if (!g)
+        return;
+    ((void (THISCALL *)(void *, int, int))(base + B->set_cursor_mode))(g, mode, !mode);
+    if (!mode)
+        ((void (THISCALL *)(void *))(base + B->process_input))(g);
+}
+
+/* The chat input is open or a dialog is shown: keys are being typed. */
+int samp_typing(void)
+{
+    void *in = build() ? global(B->input) : NULL, *dlg = build() ? global(B->dialog) : NULL;
+    return (in && AT(in, INPUT_ENABLED, int)) || (dlg && AT(dlg, DIALOG_SHOWN, int));
 }
 
 /* RakClient is a RakPeer with its RakClientInterface at +0xDDE, in every build. */
@@ -275,7 +302,7 @@ static void trace_state(void)
     void *g = global(B->game), *lp = samp_local_player(), *ng = netgame();
     int now[7], i, changed = 0;
     now[0] = in ? AT(in, INPUT_ENABLED, int) : -1;
-    now[1] = dlg ? AT(dlg, 0x28, int) : -1;
+    now[1] = dlg ? AT(dlg, DIALOG_SHOWN, int) : -1;
     now[2] = sb ? AT(sb, 0, int) : -1;
     now[3] = g ? AT(g, B->game_cursor, int) : -1;
     now[4] = lp ? AT(lp, B->local_active, int) : -1;
@@ -381,6 +408,8 @@ void samp_tick(void)
     threads_tick();
     if (!build())
         return;
+    overlay_tick();
+    console_tick();
     flush_commands();
     raknet_tick();
     /* SA-MP asks for scores and pings only while the scoreboard is open;
@@ -1149,5 +1178,6 @@ int samp_install(void)
     sends_install();
     threads_install();
     console_install();
+    dxut_install();
     return 1;
 }

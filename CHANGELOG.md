@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
+
+Every SA-MP 0.3.7 build and every opcode MoonLoader emits, with
+SAMPFUNCS's console and dxut dialogs. The in-game self-test passes 90 of 90.
 
 **Added**
 
@@ -8,7 +11,13 @@
   function moonsamp has works on all seven builds.
 - `tools/check_builds.py` checks every address and offset moonsamp uses
   against each build's own code.
-- Every SAMPFUNCS function but the dxut ones (104 more): SA-MP object and
+- SAMPFUNCS's console, opened with ~: moonloader.log as MoonLoader writes
+  it (no script needed; scriptHelper's copies are left out), sampfuncsLog
+  lines, console commands with history, Tab completion and `help`.
+- The dxut* script dialogs (0B80-0BAB): buttons, checkboxes, edit boxes,
+  statics, sliders and list boxes with DXUT's events. Every opcode
+  MoonLoader emits is now covered.
+- Every other SAMPFUNCS function (104 more): SA-MP object and
   pool pointers, object and pickup handles, listbox items, chat input and
   lines, cursor, scoreboard, game state, send rates; spawning and special
   actions; every sampSend* RPC and sync packet, stored and forced sync
@@ -20,6 +29,8 @@
 - `raknetEmulRpcReceiveBitStream` handed SA-MP the RakClientInterface
   where it needs the RakPeer 0xDDE below it, so SA-MP looked up the RPC
   on the wrong object.
+- `sampGetListboxItemText` returned an empty string: MoonLoader passes a
+  buffer for the text, which moonsamp now fills.
 
 ## 0.6.1
 
