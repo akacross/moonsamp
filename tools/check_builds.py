@@ -30,17 +30,22 @@ SIZES = {0x2F3E: 'player', 0x17898: 'vehicle', 0x2000: 'gangzone', 0x10800: 'lab
 FUNCS = ['add_message', 'local_chat', 'send_command', 'player_color', 'handle_rpc', 'encode_string',
          'decode_string', 'bs_ctor', 'bs_dtor', 'dialog_show', 'dialog_close', 'listbox_selected',
          'listbox_select', 'editbox_get', 'editbox_set', 'set_cursor_mode', 'vehicle_find', 'special_action',
-         'textdraw_set_text', 'update_players', 'current_anim', 'anim_entry']
-GLOBALS = ['netgame', 'chat', 'input', 'dialog', 'game', 'scoreboard']
+         'textdraw_set_text', 'update_players', 'current_anim', 'anim_entry', 'process_input',
+         'local_spawn', 'local_set_special', 'input_open', 'input_close', 'scoreboard_enable', 'scoreboard_close',
+         'td_create', 'td_delete', 'label_create', 'label_delete', 'send_unoccupied', 'send_onfoot', 'send_aim',
+         'send_trailer', 'send_passenger', 'send_stats', 'update_weapons', 'send_incar']
+GLOBALS = ['netgame', 'chat', 'input', 'dialog', 'game', 'scoreboard', 'death_window']
 # R3-1 functions read for the offsets
 INIT_POOLS, FIND, REMOVE, GET_SCORE, IS_NPC, GET_NAME = 0x81D0, 0x13570, 0x16E70, 0x6E0E0, 0xE130, 0x16F00
 LOCAL_PROCESS, CONNECT, CONNECTION_SUCCEEDED = 0x7270, 0x85D0, 0xAA20
 LOCAL_GET_PED, ENABLE_SPECTATING, INCAR_SEND_RATE, CONNECTION_LOST, UNOCCUPIED_SYNC = 0x2D50, 0x4010, 0x3970, 0xA990, 0x96D0
-STRING_COMPRESSOR_USER = 0x53F80
+STRING_COMPRESSOR_USER, OBJECT_FIND, ONFOOT_SEND_RATE = 0x53F80, 0x12680, 0x39B0
 GLOBAL_USERS = [0x85D0, 0x8BA0, 0xA1E0, 0x6F8C0, 0x9FFE0, 0x679F0, 0x69190, 0x6E5C0, 0xB270, 0x16110, 0x5820,
-                0x6F140, 0xC5E00, 0x1E0E0]
+                0x6F140, 0xC5E00, 0x1E0E0, 0xC47D0, 0xC4A30, 0x6C630]
 SET_NAME = bytes.fromhex('568b742408' '8bc6' '57' '8d7801')      # push esi; strlen of the argument
 SHUTDOWN = bytes.fromhex('53555657' '33db' '33ff' '8bf1' '33ed')  # ShutdownForRestart's prologue
+# constants in the source: RakPeer below RakClient's RakClientInterface (samp.c), its RPC nodes (info.c)
+RAKPEER, RPC_NODES = 0xDDE, 0x801
 
 
 def parse_table():
@@ -197,7 +202,9 @@ def derive(b, row31):
     d['remote_armour'] = zero32[1]
     d['remote_special'] = zero8[1]
     d['remote_status'] = next(mem(i.op_str)[2] for i in rs if i.op_str.startswith('dword ptr [esi') and i.op_str.endswith(', 2'))
-    d['remote_anim'] = next(mem(i.op_str)[2] for i in rs if i.mnemonic == 'lea' and i.op_str.startswith('edi')) + 0x40
+    # its sync data: on-foot, in-car, passenger, aim, in the order it clears them
+    leas = [mem(i.op_str)[2] for i in rs if i.mnemonic == 'lea' and re.match(r'e(di|cx|ax), \[esi', i.op_str)]
+    d['remote_onfoot'], d['remote_incar'], d['remote_passenger'], d['remote_aim'] = leas[:4]
 
     # score, ping, local score, local ping: four getters in this order
     g = [x[2] for x in reads(img, b.locate(GET_SCORE), 0x80, ())]
@@ -257,12 +264,33 @@ def derive(b, row31):
                     break
     d['state'] = states
 
+    # CObjectPool::Find walks the array from id 1
+    lea = next(i for i in ins(img, b.locate(OBJECT_FIND), 0x30) if i.mnemonic == 'lea' and i.op_str.startswith('esi'))
+    d['obj_objects'] = mem(lea.op_str)[2] - 4
+
+    # the send rates: the global GetOnfootSendRate reads after CNetGame's
+    a = b.locate(ONFOOT_SEND_RATE)
+    g = [int(x, 16) - img.base for i in ins(img, a, 0x40, ('int3',)) for x in re.findall(r'\[(0x[0-9a-f]+)\]', i.op_str)] if a else []
+    d['sendrates'] = next((x for x in g if x not in (d.get('netgame'), d.get('game'))), None)
+
     a = b.locate(STRING_COMPRESSOR_USER)
     d['string_compressor'] = next(int(i.op_str.split('[0x')[1].split(']')[0], 16) - img.base
                                   for i in ins(img, a, 0x30) if '[0x' in i.op_str)
     callers = img.callers(d['handle_rpc']) if d['handle_rpc'] else []
     d['handle_rpc_call'] = callers[0] if len(callers) == 1 else None
     return d
+
+
+def constants(img, d):
+    """The RakClient factory's `add eax, X` and the interface's `sub ecx, X` thunks give RakPeer's place;
+    HandleRPCPacket's `add esi, X` before the node lookups gives the RPC nodes."""
+    text = img.data[img.lo:img.hi]
+    adds = {int.from_bytes(m.group(1), 'little') for m in re.finditer(rb'\x85\xC0\x74.\x05(....)', text, re.S)}
+    subs = collections.Counter(int.from_bytes(m.group(1), 'little') for m in re.finditer(rb'\x81\xE9(....)\xE9', text, re.S))
+    peer = [x for x in adds if subs[x] > 8]
+    nodes = [int(i.op_str.split(', ')[1], 16) for i in ins(img, d['handle_rpc'], 0x100)
+             if i.mnemonic == 'add' and i.op_str.startswith('esi, 0x')] if d['handle_rpc'] else []
+    return {'rakpeer': peer[0] if len(peer) == 1 else None, 'rpc_nodes': nodes[0] if len(nodes) == 1 else None}
 
 
 def fmt(v):
@@ -281,7 +309,8 @@ def main():
         b = Build(ref, list(imgs.values()), imgs[name])
         got = derive(b, table['0.3.7-R3-1'])
         problems, unchecked = [], []
-        for k, want in row.items():
+        got.update(constants(imgs[name], got))
+        for k, want in list(row.items()) + [('rakpeer', RAKPEER), ('rpc_nodes', RPC_NODES)]:
             if k == 'name':
                 continue
             v = got.get(k)

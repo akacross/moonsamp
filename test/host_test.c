@@ -271,6 +271,52 @@ __declspec(dllexport) int run(void)
         check(GetTickCount() - t0 < 500, "200000 traced calls on a full table stay fast");
     }
 
+    /* script threads, on GTA's own script lists */
+    {
+        static uint8_t pool[2][0x100], scm[16];
+        uint8_t *tramp = *(int32_t *)0x561932 + (uint8_t *)0x561936, *t;
+        void (*tick)(void) = (void (*)(void))(tramp + 7 + *(int32_t *)(tramp + 3));
+        float f = 2.5f;
+        *(uint8_t **)(pool[0] + 0) = pool[1];
+        *(uint8_t **)(pool[1] + 4) = pool[0];
+        *(void **)0xA8B428 = pool[0];               /* idle */
+        *(void **)0xA8B42C = NULL;                  /* active */
+        n = put_int(0, (int32_t)(uintptr_t)scm);
+        n = put_local0(n);
+        n = put_int(n, 5);
+        n = put8(n, 0x06); n = put(n, &f, 4);
+        n = put8(n, 0x00);
+        call(0x0C6B, n);
+        t = (uint8_t *)(uintptr_t)LOCAL(0);
+        check(t == pool[0] && *(void **)0xA8B42C == pool[0] && *(void **)0xA8B428 == pool[1],
+              "0C6B: GTA's StartNewScript takes an idle script into the active list");
+        check(*(uint8_t **)(t + 0x10) == scm && *(uint8_t **)(t + 0x14) == scm && t[0xC4] == 1 &&
+              *(int32_t *)(t + 0x3C) == 5 && *(float *)(t + 0x40) == 2.5f && IP == code + n,
+              "0C6B: runs at the pointer, arguments in its locals, the list read to its end");
+        n = put_int(0, (int32_t)(uintptr_t)t); n = put_int(n, 3); n = put_int(n, 9);
+        call(0x0C6C, n);
+        n = put_int(0, (int32_t)(uintptr_t)t); n = put_int(n, 3); n = put_local0(n);
+        call(0x0C6D, n);
+        check(LOCAL(0) == 9, "0C6C / 0C6D a thread's local variable");
+        *(uint32_t *)(t + 0xCC) = 1234;
+        n = put_int(0, (int32_t)(uintptr_t)t);
+        call(0x0BDE, n);
+        check(*(uint32_t *)(t + 0xCC) == 0xFFFFFFFF, "0BDE pauses: it never wakes");
+        call(0x0BDF, n);
+        check(*(uint32_t *)(t + 0xCC) == 1234, "0BDF resumes: it wakes when it would have");
+        n = put_int(0, (int32_t)(uintptr_t)t); n = put_int(n, 7); n = put8(n, 0x00);
+        *(uint8_t **)(t + 0x14) = scm + 8;
+        call(0x0C6F, n);
+        check(*(uint8_t **)(t + 0x14) == scm && *(int32_t *)(t + 0x3C) == 7, "0C6F restarts it with new arguments");
+        n = put_int(0, (int32_t)(uintptr_t)t);
+        call(0x0C6E, n);
+        check(*(void **)0xA8B42C == pool[0] && *(uint32_t *)(t + 0xCC) == 0xFFFFFFFF,
+              "0C6E stops it at once, still in the active list");
+        tick();
+        check(*(void **)0xA8B42C == NULL && *(void **)0xA8B428 == pool[0] && t[0xC4] == 0,
+              "the frame tick moves it back to the idle list");
+    }
+
     f = fopen("moonsamp.log", "rb");
     if (f) {
         size_t r = fread(log, 1, sizeof log - 1, f);

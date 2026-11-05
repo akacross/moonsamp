@@ -48,7 +48,7 @@ build's addresses and offsets are in `src/builds.h`.
 | 0C8F | sampProcessChatInput |
 | 0C90 | sampIsChatCommandDefined |
 | 0B25 / 0B26 / 0B2A / 0B5C / 0B62 | sampGetPlayerHealth / Armor / Ping, sampIsPlayerPaused, sampGetPlayerSpecialAction |
-| 0B57 | sampGetPlayerAnimationId (the ped's strongest-blended animation, GTA's numbering) |
+| 0B57 | sampGetPlayerAnimationId (SA-MP's numbering) |
 | 0B61 / 0C8A / 0C8B / 0B29 | sampIsLocalPlayerSpawned, sampGetMaxPlayerId, sampGetPlayerCount, sampSetLocalPlayerName |
 | 0B2C / 0B46 / 0BB5 | sampGetVehicleIdByCarHandle, sampIs3dTextDefined, sampGetGangzonePoolPtr |
 | 0B39 / 0B3A / 0B38 | sampGetCurrentServerAddress / Name, sampConnectToServer |
@@ -71,7 +71,24 @@ build's addresses and offsets are in `src/builds.h`.
 | 0B78 / 0C7E | sampfuncsLog (to moonsamp.log), isSampfuncsConsoleActive (always false: no console window) |
 | 0C62 / 0C63 / 0C64 / 0C91 | runSampfuncsConsoleCommand, sampfuncsRegister/UnregisterConsoleCommand, isSampfuncsConsoleCommandDefined |
 | 0C7F / 0C80 | command descriptions (accepted, unused) |
+| 0AF7, 0B7A-0B7F, 0BAC-0BB9, 0B24 | sampGetBase, RakClient / RakPeer and its functions and RPC nodes, every SA-MP object and pool pointer, sampGetPlayerStructPtr |
+| 0B50-0B53 | object and pickup handles by SA-MP id and back |
+| 0B54 / 0B5B / 0BD7 / 0BD8 | dialog listbox item count and text, dialog text and caption |
+| 0B74 / 0B76 / 0B77 / 0B79 / 0BDD | sampSetChatString, chat input text (set / get), enable it, chat display mode |
+| 0B5D / 0BD6 / 0B27 / 0B22 / 0B28 | sampToggleCursor, sampToggleScoreboard, sampSetGamestate, sampSetSendrate, sampDisconnectWithReason |
+| 0AF6 / 0AFD | sampSpawnPlayer, sampSetSpecialAction (SA-MP's own CLocalPlayer functions) |
+| 0AFB-0AFE, 0B30-0B33, 0BC8-0BD4 | the sampSend* RPCs, written as SA-MP's own senders write them |
+| 0BBF, 0BC0-0BC7 | sampSendRconCommand, sampSend*Data (sync packets from the script's struct) |
+| 0BBA-0BBE | sampStorePlayer*Data: the last sync data received from a player |
+| 0C81-0C88 | sampForce*Sync: SA-MP's own senders, called now |
+| 0C48, 0C4A-0C4F, 0C5E | sampTextdrawCreate, its setters, sampTextdrawDelete |
+| 0B44 / 0C45 / 0B45 / 0C47 | sampCreate3dText(Ex), sampDestroy3dText, sampSet3dTextString |
+| 0BDE / 0BDF, 0C6B-0C6F | pause / resume any script thread; threads running SCM code at a pointer, their locals |
+| 0AAA / 0AB3 / 0AB4 | getScmThreadStructNamed, CLEO shared variables (without CLEO; with it, CLEO's own) |
+| 0A92 / 0A94 | CLEO scripts: false without CLEO |
 | 0AA5 | call_function (CLEO; used by the callback stubs) |
+
+Not covered yet: the dxut* functions (0B80-0BAB), SAMPFUNCS's own dialogs.
 
 RakNet hooks: RakClientInterface vtable slots Send (6), Receive (8),
 DeallocatePacket (9) and RPC (25), and the call to RakPeer::HandleRPCPacket

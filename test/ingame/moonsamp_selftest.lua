@@ -6,8 +6,10 @@
     (provider: "sampfuncs" or "moonsamp"). Run it once with SAMPFUNCS and once
     with moonsamp, then compare the two logs (test/ingame/compare.py).
 
-    Nothing is sent to the server and nothing is shown: only getters, a
-    BitStream battery and a SAMPFUNCS global variable. Sections:
+    Nothing is sent to the server but one on-foot and one stats sync (what
+    the client sends anyway). The rest reads, or changes only this client
+    and undoes it: a textdraw, a 3D text and a chat line made and removed, a
+    script thread started and destroyed. Sections:
       CHECK  must hold under either provider (exact)
       VALUE  a snapshot; differences between sessions are expected for
              dynamic values (ping, health, positions)
@@ -91,11 +93,11 @@ local function bitstreams()
     raknetBitStreamSetReadOffset(bs, 9)
     check('set read offset 9, read int16', get('raknetBitStreamReadInt16', bs) == 0xBEEF)
     value('read offset after that', 'raknetBitStreamGetReadOffset', bs)
-    raknetBitStreamSetWriteOffset(bs, 9)
+    raknetBitStreamSetWriteOffset(bs, 8)
     raknetBitStreamWriteInt16(bs, 0x1234)
-    value('bits used after rewriting at 9', 'raknetBitStreamGetNumberOfBitsUsed', bs)
+    value('bits used after rewriting at 8', 'raknetBitStreamGetNumberOfBitsUsed', bs)
     raknetBitStreamResetReadPointer(bs)
-    raknetBitStreamIgnoreBits(bs, 9)
+    raknetBitStreamIgnoreBits(bs, 8)
     check('rewritten int16 reads back', get('raknetBitStreamReadInt16', bs) == 0x1234)
     check('data pointer is set', (get('raknetBitStreamGetDataPtr', bs) or 0) ~= 0)
 
@@ -261,6 +263,125 @@ local function textdraws()
     out[#out + 1] = 'VALUE 3D texts defined                                    ' .. labels
 end
 
+local function more()
+    local function set(name) local v = get(name) return type(v) == 'number' and v ~= 0 end
+    for _, p in ipairs{ 'sampGetBase', 'sampGetRakclientInterface', 'sampGetRakpeer', 'sampGetServerSettingsPtr',
+                        'sampGetKillInfoPtr', 'sampGetMiscInfoPtr', 'sampGetObjectPoolPtr', 'sampGetTextlabelPoolPtr',
+                        'sampGetPickupPoolPtr' } do
+        check(p .. ' is set', set(p))
+    end
+    check('sampGetRakpeer is 0xDDE below the RakClient', get('sampGetRakpeer') == get('sampGetRakclientInterface') - 0xDDE)
+    check('RakClient vtable slot 6 is set', (get('sampGetRakclientFuncAddressByIndex', 6) or 0) ~= 0)
+    check('RPC 61 (ShowDialog) has a node', (get('sampGetRpcNodeByRpcId', 61) or 0) ~= 0)
+    check('RPC 61 has a handler', (get('sampGetRpcCallbackByRpcId', 61) or 0) ~= 0)
+    value('getScmThreadStructNamed(MAIN) is set', 'getScmThreadStructNamed', 'MAIN')
+    setCleoSharedVar(7, 1234)
+    check('CLEO shared var round trip', get('getCleoSharedVar', 7) == 1234)
+
+    local _, me = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    for id = 0, (get('sampGetMaxPlayerId', false) or 0) do
+        if id ~= me and get('sampIsPlayerConnected', id) then
+            check('sampGetPlayerStructPtr of a remote player is set', (get('sampGetPlayerStructPtr', id) or 0) ~= 0)
+            break
+        end
+    end
+
+    local objects, pickups, objbad, pickbad = 0, 0, 0, 0
+    for id = 0, 2099 do
+        local h = get('sampGetObjectHandleBySampId', id)
+        if h and h ~= -1 and h ~= 0 then
+            objects = objects + 1
+            if get('sampGetObjectSampIdByHandle', h) ~= id then objbad = objbad + 1 end
+        end
+    end
+    for id = 0, 4095 do
+        local h = get('sampGetPickupHandleBySampId', id)
+        if h and h ~= -1 and h ~= 0 then
+            pickups = pickups + 1
+            if get('sampGetPickupSampIdByHandle', h) ~= id then pickbad = pickbad + 1 end
+        end
+    end
+    out[#out + 1] = string.format('VALUE %-48s %d', 'objects with a handle', objects)
+    out[#out + 1] = string.format('VALUE %-48s %d', 'pickups with a handle', pickups)
+    check('object id <-> handle round trips', objbad == 0, objbad .. ' bad')
+    check('pickup id <-> handle round trips', pickbad == 0, pickbad .. ' bad')
+
+    value('sampGetDialogCaption', 'sampGetDialogCaption')
+    value('sampGetListboxItemsCount', 'sampGetListboxItemsCount')
+    value('sampGetListboxItemText(0)', 'sampGetListboxItemText', 0)
+
+    -- a chat line, changed and put back
+    local text, prefix, color, pcolor = sampGetChatString(99)
+    sampSetChatString(99, 'moonsamp self-test line', '[ST]', 0xFF00FF00, 0xFFFF0000)
+    local t2, p2, c2, pc2 = sampGetChatString(99)
+    check('sampSetChatString reads back', t2 == 'moonsamp self-test line' and p2 == '[ST]' and c2 == 0xFF00FF00 and pc2 == 0xFFFF0000,
+          fmt(t2) .. ' ' .. fmt(p2) .. ' ' .. fmt(c2) .. ' ' .. fmt(pc2))
+    sampSetChatString(99, text, prefix, color, pcolor)
+
+    -- a textdraw on a free id, changed through every setter, deleted
+    local td
+    for id = 2303, 2200, -1 do if not get('sampTextdrawIsExists', id) then td = id break end end
+    if td then
+        sampTextdrawCreate(td, 'moonsamp', 600.0, 400.0)
+        check('sampTextdrawCreate: it exists', get('sampTextdrawIsExists', td) == true)
+        check('sampTextdrawCreate: its text', get('sampTextdrawGetString', td) == 'moonsamp')
+        local x, y = get('sampTextdrawGetPos', td)
+        check('sampTextdrawCreate: its position', x == 600.0 and y == 400.0, fmt(x) .. ', ' .. fmt(y))
+        value('new textdraw letter size, colour', 'sampTextdrawGetLetterSizeAndColor', td)
+        value('new textdraw box', 'sampTextdrawGetBoxEnabledColorAndSize', td)
+        value('new textdraw align / proportional / style', 'sampTextdrawGetAlign', td)
+        sampTextdrawSetAlign(td, 3)
+        sampTextdrawSetProportional(td, 0)
+        sampTextdrawSetStyle(td, 2)
+        sampTextdrawSetShadow(td, 1, 0xFF112233)
+        sampTextdrawSetOutlineColor(td, 2, 0xFF445566)
+        sampTextdrawSetModelRotationZoomVehColor(td, 411, 1.0, 2.0, 3.0, 0.5, 6, 1)
+        check('sampTextdrawSetAlign 3', get('sampTextdrawGetAlign', td) == 3)
+        check('sampTextdrawSetProportional 0', get('sampTextdrawGetProportional', td) == 0)
+        check('sampTextdrawSetStyle 2', get('sampTextdrawGetStyle', td) == 2)
+        local o, oc = get('sampTextdrawGetOutlineColor', td)
+        check('sampTextdrawSetOutlineColor', o == 2 and oc == 0xFF445566, fmt(o) .. ', ' .. fmt(oc))
+        local m, rx, ry, rz, z, c1, c2 = get('sampTextdrawGetModelRotationZoomVehColor', td)
+        check('sampTextdrawSetModelRotationZoomVehColor', m == 411 and ry == 2.0 and z == 0.5 and c1 == 6 and c2 == 1)
+        sampTextdrawDelete(td)
+        check('sampTextdrawDelete: gone', get('sampTextdrawIsExists', td) == false)
+    end
+
+    -- a 3D text far away, renamed, destroyed
+    local lid = get('sampCreate3dText', 'moonsamp label', 0xFF00FF00, 0.0, 0.0, -100.0, 5.0, true, -1, -1)
+    check('sampCreate3dText gives an id', type(lid) == 'number' and lid >= 0, fmt(lid))
+    if type(lid) == 'number' and lid >= 0 then
+        check('the 3D text is defined', get('sampIs3dTextDefined', lid) == true)
+        value('new 3D text info', 'sampGet3dTextInfoById', lid)
+        sampSet3dTextString(lid, 'renamed')
+        check('sampSet3dTextString reads back', get('sampGet3dTextInfoById', lid) == 'renamed')
+        sampDestroy3dText(lid)
+        check('sampDestroy3dText: gone', get('sampIs3dTextDefined', lid) == false)
+    end
+
+    -- a script thread waiting forever on our own code: locals, pause, destroy
+    local ffi = require 'ffi'
+    local code = ffi.new('uint8_t[16]', { 0x01, 0x00, 0x01, 0xFF, 0xFF, 0xFF, 0x7F })   -- wait 0x7FFFFFFF ms
+    local th = get('createScmThreadAtPointer', tonumber(ffi.cast('uintptr_t', code)), { 5, 6 })
+    check('createScmThreadAtPointer gives a thread', type(th) == 'number' and th ~= 0, fmt(th))
+    if type(th) == 'number' and th ~= 0 then
+        check('its arguments are its locals', get('getScmThreadLocalVar', th, 0) == 5 and get('getScmThreadLocalVar', th, 1) == 6)
+        setScmThreadLocalVar(th, 3, 77)
+        check('setScmThreadLocalVar / get', get('getScmThreadLocalVar', th, 3) == 77)
+        pauseScmThread(th)
+        resumeScmThread(th)
+        wait(100)
+        destroyScmThread(th)
+        wait(100)
+        check('the thread was destroyed without trouble', true)
+    end
+    _G.__selftest_code = code
+
+    sampForceOnfootSync()
+    sampForceStatsSync()
+    check('sampForceOnfootSync / sampForceStatsSync ran', true)
+end
+
 local function write()
     local path = getWorkingDirectory() .. '\\logs\\moonsamp_selftest-' .. provider .. '.log'
     local f = io.open(path, 'w')
@@ -282,7 +403,7 @@ function main()
     else provider = 'none' end
     while not sampIsLocalPlayerSpawned() do wait(500) end
     wait(5000)
-    for _, section in ipairs{ state, globals, bitstreams, players, vehicles, textdraws } do
+    for _, section in ipairs{ state, globals, bitstreams, players, vehicles, textdraws, more } do
         local ok, err = pcall(section)
         if not ok then out[#out + 1] = 'ERROR section: ' .. tostring(err) end
     end

@@ -129,7 +129,7 @@ static void setup_hook(int code)
 /* ---- fake samp.dll ------------------------------------------------------ */
 
 static struct { int called, id, prio, rel, chan, shift, bits; uint8_t data[64]; } last_rpc, last_send;
-static struct { int called, len; uint8_t data[64]; uint32_t pid[2]; } last_handle;
+static struct { int called, len; uint8_t data[64]; uint32_t pid[2]; void *peer; } last_handle;
 static Packet *queue[4];
 static int nqueue;
 static uint8_t *dealloc_data[4];
@@ -178,7 +178,7 @@ static void THISCALL f_dealloc(void *rc, Packet *p)
 
 static int THISCALL f_handle(void *peer, const uint8_t *data, int len, uint32_t lo, uint32_t hi)
 {
-    (void)peer;
+    last_handle.peer = peer;
     last_handle.called++;
     last_handle.len = len;
     memcpy(last_handle.data, data, len < 64 ? len : 64);
@@ -188,7 +188,8 @@ static int THISCALL f_handle(void *peer, const uint8_t *data, int len, uint32_t 
 }
 
 static void *vtable[40];
-static struct { void **vt; } rak_client = { vtable };
+static struct __attribute__((packed)) { uint8_t peer[0xDDE]; void **vt; } rak = { { 0 }, vtable };
+#define rak_client rak.vt
 static uint8_t netgame[0x400];
 
 static Packet *packet(const uint8_t *d, int len)
@@ -347,14 +348,14 @@ __declspec(dllexport) int run(void)
         handle = (void *)(site + 5 + *(int32_t *)(site + 1));
         check((uintptr_t)handle != base + L->handle_rpc, "HandleRPCPacket call site hooked");
         mode = 3; calls = 0;
-        handle(&rak_client, in, sizeof in, 0x0100007F, 7777);
+        handle(rak.peer, in, sizeof in, 0x0100007F, 7777);
         check(calls == 1 && seen[1] == 0x5D && seen_value == 0x3412,
               "parses id 0x5D and a 16-bit payload (compressed length)");
         check(last_handle.called == 1 && last_handle.len == 4 &&
               memcmp(last_handle.data, "\x14\x60\xF8\xAB", 4) == 0,
               "rebuilds 14 60 F8 AB: new id, 8-bit compressed length, AB");
         mode = 2;
-        handle(&rak_client, in, sizeof in, 0x0100007F, 7777);
+        handle(rak.peer, in, sizeof in, 0x0100007F, 7777);
         check(last_handle.called == 1, "hook_ret 0 drops the RPC");
         mode = 0;
         {
@@ -363,8 +364,8 @@ __declspec(dllexport) int run(void)
             begin(); put_int(0x22); put_int(bs); op(main_script, 0x0BF6);
             check(last_handle.called == 2 && last_handle.len == 4 &&
                   memcmp(last_handle.data, "\x14\x22\xF8\xFF", 4) == 0 &&
-                  last_handle.pid[0] == 0x0100007F && last_handle.pid[1] == 7777,
-                  "0BF6 hands SA-MP 14 22 F8 FF from the server's id, past the hook");
+                  last_handle.pid[0] == 0x0100007F && last_handle.pid[1] == 7777 && last_handle.peer == rak.peer,
+                  "0BF6 hands RakPeer 14 22 F8 FF from the server's id, past the hook");
         }
     }
 

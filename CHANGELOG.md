@@ -8,6 +8,18 @@
   function moonsamp has works on all seven builds.
 - `tools/check_builds.py` checks every address and offset moonsamp uses
   against each build's own code.
+- Every SAMPFUNCS function but the dxut ones (104 more): SA-MP object and
+  pool pointers, object and pickup handles, listbox items, chat input and
+  lines, cursor, scoreboard, game state, send rates; spawning and special
+  actions; every sampSend* RPC and sync packet, stored and forced sync
+  data; creating textdraws and 3D texts; script threads; CLEO's shared
+  variables and getScmThreadStructNamed when CLEO is not installed.
+
+**Fixed**
+
+- `raknetEmulRpcReceiveBitStream` handed SA-MP the RakClientInterface
+  where it needs the RakPeer 0xDDE below it, so SA-MP looked up the RPC
+  on the wrong object.
 
 ## 0.6.1
 

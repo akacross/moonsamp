@@ -75,6 +75,13 @@ void *samp_rakclient(void)
     return ng ? AT(ng, B->ng_rakclient, void *) : NULL;
 }
 
+/* RakClient is a RakPeer with its RakClientInterface at +0xDDE, in every build. */
+void *samp_rakpeer(void)
+{
+    uint8_t *rc = samp_rakclient();
+    return rc ? rc - 0xDDE : NULL;
+}
+
 /* The game state as a GS_* index, or -1. */
 int samp_state(void)
 {
@@ -371,6 +378,7 @@ static void trace_input(void)
 /* Once a frame, from the CTimer::Update hook. */
 void samp_tick(void)
 {
+    threads_tick();
     if (!build())
         return;
     flush_commands();
@@ -673,6 +681,12 @@ static void *remote_player(void *pp, int id)
     return info ? AT(info, B->info_remote, void *) : NULL;
 }
 
+void *samp_remote_player(int id)
+{
+    void *pp = player_pool();
+    return pp ? remote_player(pp, id) : NULL;
+}
+
 static void store1(Script *s, int32_t v)
 {
     ScriptParams[0].i = v;
@@ -734,7 +748,7 @@ static int8_t __stdcall op_0B57(Script *s)
             if ((lp = local_player()) != NULL && (ped = AT(lp, B->local_ped, void *)) != NULL)
                 anim = ((uint32_t (THISCALL *)(void *))(base + B->current_anim))(ped) & 0xFFFF;
         } else if ((rp = remote_player(pp, id)) != NULL) {
-            anim = AT(rp, B->remote_anim, uint32_t) & 0xFFFF;
+            anim = AT(rp, B->remote_onfoot + 0x40, uint32_t) & 0xFFFF;
         }
     }
     store1(s, anim);
@@ -856,17 +870,22 @@ static int8_t __stdcall op_0B62(Script *s)
     return 0;
 }
 
+/* SA-MP's id of the vehicle with this GTA handle, or -1 */
+int samp_vehicle_id(int handle)
+{
+    typedef uint16_t (THISCALL *FindFn)(void *, void *);
+    void *vp = samp_pool(POOL_VEHICLE), *car = CPools_GetVehicle(handle);
+    uint16_t r;
+    if (!vp || !car)
+        return -1;
+    r = ((FindFn)(base + B->vehicle_find))(vp, car);
+    return r == 0xFFFF ? -1 : r;
+}
+
 /* 0B2C samp %2d% = get_vehicle_id_by_car_handle %1d% */
 static int8_t __stdcall op_0B2C(Script *s)
 {
-    typedef uint16_t (THISCALL *FindFn)(void *, void *);
-    int handle = script_int(s), id = -1;
-    void *vp = samp_pool(POOL_VEHICLE), *car = CPools_GetVehicle(handle);
-    if (vp && car) {
-        uint16_t r = ((FindFn)(base + B->vehicle_find))(vp, car);
-        if (r != 0xFFFF)
-            id = r;
-    }
+    int id = samp_vehicle_id(script_int(s));
     store1(s, id);
     script_cond(s, id >= 0);
     return 0;
@@ -1126,6 +1145,9 @@ int samp_install(void)
     dialogs_install();
     textdraws_install();
     players_install();
+    info_install();
+    sends_install();
+    threads_install();
     console_install();
     return 1;
 }

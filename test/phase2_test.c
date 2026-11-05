@@ -76,6 +76,28 @@ static const char *THISCALL s_eb_get(void *eb) { rec(eb, 0, 0); return "typed"; 
 static void THISCALL s_eb_set(void *eb, const char *t, int sel) { rec(eb, sel, 0); strcpy(last.s[0], t); }
 static void THISCALL s_shutdown(void *ng) { rec(ng, 0, 0); }
 static void THISCALL s_cursor(void *g, int mode, int hide) { rec(g, mode, hide); }
+static int input_enabling;
+static const char *called;    /* which stub ran last */
+static float lf[4];
+static uint8_t transmit[0x3F];
+static void THISCALL s_td_create(void *pool, int id, void *t, const char *text)
+{ called = "td_create"; rec(pool, id, 0); memcpy(transmit, t, sizeof transmit); strcpy(last.s[0], text); }
+static void THISCALL s_td_delete(void *pool, int id) { called = "td_delete"; rec(pool, id, 0); }
+static void THISCALL s_label_create(void *pool, int id, const char *text, uint32_t rgba, float x, float y, float z,
+                                    float dist, int los, int player, int vehicle)
+{
+    called = "label_create"; rec(pool, id, los & 0xFF); strcpy(last.s[0], text);
+    last.c = (int)rgba; lf[0] = x; lf[1] = y; lf[2] = z; lf[3] = dist;
+    sprintf(last.s[1], "%d %d", player & 0xFFFF, vehicle & 0xFFFF);
+}
+static int THISCALL s_label_delete(void *pool, int id) { called = "label_delete"; rec(pool, id, 0); return 1; }
+#define STUB0(name) static void THISCALL s_##name(void *self) { called = #name; rec(self, 0, 0); }
+#define STUB1(name) static void THISCALL s_##name(void *self, int a) { called = #name; rec(self, a, 0); }
+#define STUB2(name) static void THISCALL s_##name(void *self, int a, int b) { called = #name; rec(self, a, b); }
+STUB0(local_spawn) STUB1(local_set_special) STUB0(input_open) STUB0(input_close) STUB0(scoreboard_enable)
+STUB1(scoreboard_close) STUB2(send_unoccupied) STUB0(send_onfoot) STUB0(send_aim) STUB1(send_trailer)
+STUB0(send_passenger) STUB0(send_stats) STUB0(update_weapons) STUB0(send_incar)
+static void THISCALL s_process_input(void *g) { (void)g; input_enabling++; }
 static void THISCALL s_setname(void *pp, const char *name) { rec(pp, 0, 0); strcpy(last.s[0], name); }
 static char THISCALL s_special(void *lp) { rec(lp, 0, 0); return 7; }
 static void THISCALL s_td_set(void *td, const char *t) { rec(td, 0, 0); strcpy(last.s[0], t); }
@@ -117,12 +139,23 @@ static int THISCALL f_rpc(void *rc, int *id, uint8_t *bs, int p, int r, int c, i
     memcpy(rpc_data, *(uint8_t **)(bs + 0xC), (*(int *)bs + 7) / 8);
     return 1;
 }
+static int send_calls, send_bits, send_reliability;
+static uint8_t send_data[128];
+static int THISCALL f_send(void *rc, uint8_t *bs, int p, int r, int c)
+{
+    (void)rc; (void)p; (void)c;
+    send_calls++;
+    send_bits = *(int *)bs;
+    send_reliability = r;
+    memcpy(send_data, *(uint8_t **)(bs + 0xC), (send_bits + 7) / 8);
+    return 1;
+}
 static int disc_calls, disc_block;
 static void THISCALL f_disconnect(void *rc, unsigned block, unsigned char ch) { (void)rc; (void)ch; disc_calls++; disc_block = block; }
 static int THISCALL f_nop(void *rc) { (void)rc; return 0; }
 
 static void *vtable[40];
-static struct { void **vt; } rak = { vtable };
+static struct __attribute__((packed)) { uint8_t peer[0xDDE]; void **vt; } rak = { { 0 }, vtable };
 
 static void jump(uintptr_t base, uint32_t rva, void *to)
 {
@@ -152,6 +185,8 @@ static uint8_t netgame[0x400], pools[0x40], pp[0x3000], lp[0x400], info1[0x40], 
 static uint8_t remote1[0x200], remote4[0x200], label_pool[0xE800 + 0x2000];
 static uint8_t td_pool[0x2400 + 2304 * 4], td[0x9D6], gz_pool[16], dlg[0x100], game[0x100];
 static uint8_t scoreboard[0x44], chat[0x63EA], input[0x1B00], listbox[16], editbox[16];
+static uint8_t death_window[0x100], settings[0x40], obj_pool[0x20D4 + 2100 * 4], object7[0x100];
+static uint8_t pickup_pool[0x23004], vpool[0x4FB4 + 2000 * 4];
 
 __declspec(dllexport) int run(void)
 {
@@ -185,6 +220,16 @@ __declspec(dllexport) int run(void)
     jump(base, L->add_message, s_add_message);
     jump(base, L->current_anim, s_current_anim);
     jump(base, L->anim_entry, s_anim_entry);
+    jump(base, L->process_input, s_process_input);
+    jump(base, L->td_create, s_td_create);         jump(base, L->td_delete, s_td_delete);
+    jump(base, L->label_create, s_label_create);   jump(base, L->label_delete, s_label_delete);
+    jump(base, L->local_spawn, s_local_spawn);     jump(base, L->local_set_special, s_local_set_special);
+    jump(base, L->input_open, s_input_open);       jump(base, L->input_close, s_input_close);
+    jump(base, L->scoreboard_enable, s_scoreboard_enable); jump(base, L->scoreboard_close, s_scoreboard_close);
+    jump(base, L->send_unoccupied, s_send_unoccupied); jump(base, L->send_onfoot, s_send_onfoot);
+    jump(base, L->send_aim, s_send_aim);           jump(base, L->send_trailer, s_send_trailer);
+    jump(base, L->send_passenger, s_send_passenger); jump(base, L->send_stats, s_send_stats);
+    jump(base, L->update_weapons, s_update_weapons); jump(base, L->send_incar, s_send_incar);
     *(void **)0xB74490 = &ped_pool;
     *(void **)0xB74494 = &vehicle_pool;
     *(int32_t *)0xC17044 = 1920;
@@ -194,7 +239,8 @@ __declspec(dllexport) int run(void)
         vtable[i] = (void *)f_nop;
     vtable[2] = (void *)f_disconnect;
     vtable[25] = (void *)f_rpc;
-    AT(netgame, L->ng_rakclient, void *) = &rak;
+    vtable[6] = (void *)f_send;
+    AT(netgame, L->ng_rakclient, void *) = &rak.vt;
     strcpy((char *)netgame + L->ng_host, "1.2.3.4");
     strcpy((char *)netgame + L->ng_host + 0x101, "Test Server");
     AT(netgame, L->ng_host + 0x205, int) = 7777;
@@ -231,7 +277,6 @@ __declspec(dllexport) int run(void)
         AT(samp_ped, 0x2A4, void *) = peds + 2 * 0x7C4;
     }
     {
-        static uint8_t vpool[0x4FB4 + 2000 * 4];
         AT(vpool, 0, int) = 5;
         AT(vpool, 0x4FB4 + 3 * 4, void *) = vehicles + 0xA18;
         AT(pools, L->pool[POOL_VEHICLE], void *) = vpool;
@@ -244,7 +289,7 @@ __declspec(dllexport) int run(void)
     AT(pp, L->pp_local_score, int) = 12;
     AT(info1, L->info_score, int) = 24;
     AT(info4, L->info_npc, int) = 1;
-    AT(remote1, L->remote_anim, uint32_t) = 0x00080007;   /* id 7, flags 8 */
+    AT(remote1, L->remote_onfoot + 0x40, uint32_t) = 0x00080007;   /* id 7, flags 8 */
     {   /* 3D text 9 */
         static char label_text[] = "Press 'H' to use elevator";
         uint8_t *l = label_pool + 9 * 0x1D;
@@ -376,7 +421,7 @@ __declspec(dllexport) int run(void)
         bs.data = resp;
         rpc_calls = 0;
         check(rpc != (void *)f_rpc, "RakClient RPC slot hooked");
-        rpc(&rak, &id, &bs, 1, 9, 0, 0);
+        rpc(&rak.vt, &id, &bs, 1, 9, 0, 0);
         check(rpc_calls == 0, "its DialogResponse stays off the server");
         begin(); put_int(77); put_local(0); put_local(1); put_int((int32_t)(uintptr_t)buf); op(0x0B3C);
         check(COND == 1 && LOCAL(0) == 1 && LOCAL(1) == 3 && strcmp(buf, "hi") == 0,
@@ -388,7 +433,7 @@ __declspec(dllexport) int run(void)
               "0BC9 sends DialogResponse 4D 00 | 00 | FF FF | 01 'x' to the server");
         begin(); put_int(0); op(0x0BD9);
         check(AT(dlg, 0x81, int) == 1, "0BD9(false) makes it server-side");
-        rpc(&rak, &id, &bs, 1, 9, 0, 0);
+        rpc(&rak.vt, &id, &bs, 1, 9, 0, 0);
         check(rpc_calls == 2, "a server-side dialog's response goes out");
     }
     last.called = 0;
@@ -480,6 +525,189 @@ __declspec(dllexport) int run(void)
     check(op_cond0(0x0BDA) == 1, "0BDA a dialog not answered to the server is client-side");
     AT(dlg, 0x81, int) = 1;
     check(op_cond0(0x0BDA) == 0, "0BDA a server dialog is not");
+
+    /* pointers, getters, setters (info.c) */
+    set_global(base, L->death_window, death_window);
+    AT(netgame, L->ng_state + 8, void *) = settings;
+    AT(pools, L->pool[POOL_OBJECT], void *) = obj_pool;
+    AT(pools, L->pool[POOL_PICKUP], void *) = pickup_pool;
+    AT(obj_pool, 4 + 7 * 4, int) = 1;
+    AT(obj_pool, L->obj_objects + 7 * 4, void *) = object7;
+    AT(object7, 0x44, int) = 0x1234;
+    AT(pickup_pool, 4 + 9 * 4, int) = 0x5678;
+    check(op_out(0x0AF7) == (int32_t)base, "0AF7 samp.dll base");
+    check(op_out(0x0B7F) == (int32_t)(uintptr_t)netgame && op_out(0x0BAD) == (int32_t)(uintptr_t)pools &&
+          op_out(0x0BAC) == (int32_t)(uintptr_t)settings, "0B7F CNetGame, 0BAD pools, 0BAC settings");
+    check(op_out(0x0BAE) == (int32_t)(uintptr_t)chat && op_out(0x0BAF) == (int32_t)(uintptr_t)input &&
+          op_out(0x0BB0) == (int32_t)(uintptr_t)dlg && op_out(0x0BB1) == (int32_t)(uintptr_t)death_window &&
+          op_out(0x0BB2) == (int32_t)(uintptr_t)game, "0BAE-0BB2 chat, input, dialog, kill list, misc");
+    check(op_out(0x0BB3) == (int32_t)(uintptr_t)td_pool && op_out(0x0BB4) == (int32_t)(uintptr_t)obj_pool &&
+          op_out(0x0BB6) == (int32_t)(uintptr_t)label_pool && op_out(0x0BB7) == (int32_t)(uintptr_t)pp &&
+          op_out(0x0BB8) == (int32_t)(uintptr_t)vpool && op_out(0x0BB9) == (int32_t)(uintptr_t)pickup_pool,
+          "0BB3-0BB9 the pools, in this build's slots");
+    check(op_out(0x0B7A) == (int32_t)(uintptr_t)&rak.vt && op_int(0x0B7C, 25) == (int32_t)(uintptr_t)vtable[25],
+          "0B7A RakClient, 0B7C its vtable slot 25");
+    check(op_int(0x0B24, 1) == (int32_t)(uintptr_t)info1 && op_int(0x0B24, 2) == 0, "0B24 player 1's CPlayerInfo");
+    check(op_int(0x0B50, 7) == 0x1234 && COND == 1 && op_int(0x0B52, 0x1234) == 7 && COND == 1,
+          "0B50 / 0B52 object 7 <-> handle 0x1234");
+    check(op_int(0x0B50, 8) == -1 && COND == 0, "0B50 no object 8");
+    check(op_int(0x0B51, 9) == 0x5678 && op_int(0x0B53, 0x5678) == 9, "0B51 / 0B53 pickup 9 <-> handle 0x5678");
+    {
+        static char body[] = "Body text";
+        AT(dlg, 0x34, char *) = body;
+        strcpy((char *)dlg + 0x40, "Caption");
+        check(strcmp((char *)(uintptr_t)op_out(0x0BD7), "Body text") == 0 &&
+              strcmp((char *)(uintptr_t)op_out(0x0BD8), "Caption") == 0, "0BD7 / 0BD8 dialog text and caption");
+    }
+    AT(input, 8, void *) = editbox;
+    last.called = 0;
+    begin(); put_str("/hello"); op(0x0B76);
+    check(last.called == 1 && last.self == editbox && strcmp(last.s[0], "/hello") == 0, "0B76 chat input SetText");
+    check(strcmp((char *)(uintptr_t)op_out(0x0B77), "typed") == 0, "0B77 chat input GetText");
+    begin(); put_int(1); op(0x0BDD);
+    check(AT(chat, 8, int) == 1 && AT(chat, 0x63DA, int) == 1, "0BDD chat display mode 1, redrawn");
+    {
+        char text[160], prefix[40];
+        begin(); put_int(5); put_str("set line"); put_str("[P]"); put_int(0x11223344); put_int(0x55667788); op(0x0B74);
+        begin(); put_int(5); put_int((int32_t)(uintptr_t)text); put_int((int32_t)(uintptr_t)prefix); put_local(0); put_local(1); op(0x0B75);
+        check(strcmp(text, "set line") == 0 && strcmp(prefix, "[P]") == 0 && (uint32_t)LOCAL(0) == 0x11223344 &&
+              (uint32_t)LOCAL(1) == 0x55667788, "0B74 sets chat line 5 (read back by 0B75)");
+    }
+    last.called = 0; input_enabling = 0;
+    begin(); put_int(1); op(0x0B5D);
+    check(last.called == 1 && last.a == 3 && last.b == 0 && input_enabling == 0, "0B5D show: SetCursorMode(3, FALSE)");
+    begin(); put_int(0); op(0x0B5D);
+    check(last.a == 0 && last.b == 1 && input_enabling == 1, "0B5D hide: SetCursorMode(0, TRUE), input re-enabled");
+    begin(); put_int(1); op(0x0B27);
+    check(AT(netgame, L->ng_state, int) == L->state[GS_WAITING], "0B27 gamestate 1 is waiting to connect");
+    begin(); put_int(3); op(0x0B27);
+    check(op_out(0x0B4F) == 3, "0B27 gamestate 3, read back by 0B4F");
+    begin(); put_int(7); put_int(42); op(0x0AB3);
+    check(op_int(0x0AB4, 7) == 42, "0AB3 / 0AB4 CLEO shared variable");
+    {
+        static uint8_t gta_script[0x100];
+        memcpy(gta_script + 8, "otb\0\0\0\0\0", 8);
+        *(void **)0xA8B42C = gta_script;
+        begin(); put_str("OTB"); put_local(0); op(0x0AAA);
+        check(COND == 1 && LOCAL(0) == (int32_t)(uintptr_t)gta_script, "0AAA finds GTA's script named OTB");
+        *(void **)0xA8B42C = NULL;
+    }
+    begin(); put_str("cleo\\x.cs"); opbuf[n++] = 0; op(0x0A92);
+    check(COND == 0, "0A92 CLEO scripts: false without CLEO");
+
+    /* sends (sends.c): the bytes SA-MP's own senders write */
+    {
+        static const uint8_t death[] = { 9, 3, 0 }, enter[] = { 12, 0, 1 }, cls[] = { 5, 0, 0, 0 };
+        static const uint8_t dmg[] = { 12, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 4 };
+        static const uint8_t rcon[] = { 201, 7, 0, 0, 0, 'l', 'o', 'g', 'i', 'n', ' ', 'x' };
+        uint8_t onfoot[0x44];
+        float f = 25.5f;
+        uint8_t fb[4];
+        memcpy(fb, &f, 4);
+        rpc_calls = 0;
+        begin(); put_int(5); op(0x0AFB);
+        check(rpc_calls == 1 && rpc_id == 128 && memcmp(rpc_data, cls, 4) == 0, "0AFB RequestClass: int32 class");
+        begin(); put_int(3); put_int(9); op(0x0AFE);
+        check(rpc_id == 53 && memcmp(rpc_data, death, 3) == 0, "0AFE Death: reason 9, then killer 3");
+        begin(); put_int(12); put_int(1); op(0x0B30);
+        check(rpc_id == 26 && memcmp(rpc_data, enter, 3) == 0, "0B30 EnterVehicle 12 as passenger");
+        begin(); put_int(1 << 8 | 0x07); put_int(1); put_int(2); put_int(3); put_int(4); op(0x0B33);
+        check(rpc_id == 106 && memcmp(rpc_data, dmg, sizeof dmg) == 0, "0B33 DamageVehicle: car handle -> vehicle 12, panels, doors, lights, tires");
+        begin(); put_int(4); put_float(25.5f); put_int(24); put_int(3); op(0x0BCB);
+        check(rpc_id == 115 && rpc_data[0] == 0x02 && rpc_data[1] == 0x00 && rpc_data[2] == (fb[0] >> 1),
+              "0BCB GiveTakeDamage: a 0 bit, then player 4 and the damage");
+        begin(); put_int(4); put_float(25.5f); put_int(24); put_int(3); op(0x0BCC);
+        check(rpc_id == 115 && rpc_data[0] == 0x82, "0BCC GiveTakeDamage: taking is a 1 bit");
+        send_calls = 0;
+        begin(); put_str("login x"); op(0x0BBF);
+        check(send_calls == 1 && send_bits == 12 * 8 && memcmp(send_data, rcon, sizeof rcon) == 0,
+              "0BBF RCON command packet 201, length, text");
+        for (i = 0; i < sizeof onfoot; i++) onfoot[i] = (uint8_t)i;
+        begin(); put_int((int32_t)(uintptr_t)onfoot); op(0x0BC0);
+        check(send_calls == 2 && send_bits == (1 + 0x44) * 8 && send_data[0] == 207 &&
+              memcmp(send_data + 1, onfoot, sizeof onfoot) == 0 && send_reliability == 7,
+              "0BC0 on-foot sync: packet 207 and the 0x44-byte struct, unreliable sequenced");
+        memset(onfoot, 0, sizeof onfoot);
+        AT(remote1, L->remote_onfoot + 6, uint32_t) = 0xCAFEBABE;
+        begin(); put_int(1); put_int((int32_t)(uintptr_t)onfoot); op(0x0BBA);
+        check(AT(onfoot, 6, uint32_t) == 0xCAFEBABE, "0BBA player 1's last on-foot sync, from this build's offset");
+        AT(remote1, L->remote_incar + 0x3F, uint32_t) = 0x0BADF00D;
+        begin(); put_int(1); put_int((int32_t)(uintptr_t)onfoot); op(0x0BBD);
+        check(AT(onfoot, 0, uint32_t) == 0x0BADF00D, "0BBD trailer sync right after the in-car data");
+        disc_calls = 0;
+        begin(); put_int(1); op(0x0B28);
+        check(disc_calls == 1 && disc_block == 0, "0B28 timeout: Disconnect(0), no notice to the server");
+        disc_calls = 0;
+    }
+
+    /* listbox items, RakPeer and its RPC nodes */
+    {
+        static char item0[256] = "First", item1[256] = "Second";
+        static char *items[2] = { item0, item1 };
+        static uint8_t node[8];
+        AT(listbox, 0x14C, char **) = items;
+        AT(listbox, 0x150, int) = 2;
+        check(op_out(0x0B54) == 2, "0B54 listbox item count");
+        check(strcmp((char *)(uintptr_t)op_int(0x0B5B, 1), "Second") == 0 && *(char *)(uintptr_t)op_int(0x0B5B, 5) == 0,
+              "0B5B item 1's text, nothing past the end");
+        AT(rak.peer, 0x801 + 61 * 4, void *) = node;
+        AT(node, 1, void *) = (void *)0x12345678;
+        check(op_out(0x0B7B) == (int32_t)(uintptr_t)rak.peer && op_int(0x0B7E, 61) == (int32_t)(uintptr_t)node &&
+              op_int(0x0B7D, 61) == 0x12345678 && op_int(0x0B7D, 62) == 0, "0B7B RakPeer, 0B7E / 0B7D RPC 61's node and handler");
+    }
+
+    /* creating textdraws and 3D texts, the local player, force syncs */
+    begin(); put_int(42); put_str("Made"); put_float(100.0f); put_float(200.0f); op(0x0C48);
+    check(called && strcmp(called, "td_create") == 0 && last.self == td_pool && last.a == 42 && strcmp(last.s[0], "Made") == 0 &&
+          *(float *)(transmit + 0x21) == 100.0f && *(float *)(transmit + 0x25) == 200.0f && transmit[0] == 0x12 &&
+          *(float *)(transmit + 1) == 0.48f, "0C48 CTextDrawPool::Create(42, SA-MP's defaults at 100,200, \"Made\")");
+    begin(); put_int(7); op(0x0C5E);
+    check(strcmp(called, "td_delete") == 0 && last.a == 7, "0C5E CTextDrawPool::Delete(7)");
+    begin(); put_int(7); put_int(2); op(0x0C4A);
+    check(AT(td, 0x970, uint8_t) == 1 && AT(td, 0x985, uint8_t) == 0 && AT(td, 0x986, uint8_t) == 0, "0C4A align 2: centred");
+    begin(); put_int(7); put_int(0); op(0x0C4B); begin(); put_int(7); put_int(3); op(0x0C4C);
+    check(AT(td, 0x97E, uint8_t) == 0 && AT(td, 0x987, int) == 3, "0C4B proportional off, 0C4C style 3");
+    begin(); put_int(7); put_int(2); put_int(0xFF112233); op(0x0C4E);
+    check(AT(td, 0x984, uint8_t) == 2 && AT(td, 0x97F, uint32_t) == 0xFF332211, "0C4E outline 2, colour ARGB in, ABGR stored");
+    begin(); put_int(7); put_int(411); put_float(1.0f); put_float(2.0f); put_float(3.0f); put_float(0.5f); put_int(6); put_int(1); op(0x0C4F);
+    check(AT(td, 0x9A8, uint16_t) == 411 && AT(td, 0x9AE, float) == 2.0f && AT(td, 0x9B6, float) == 0.5f &&
+          AT(td, 0x9BA, uint16_t) == 6 && AT(td, 0x9BC, uint16_t) == 1, "0C4F model 411, rotation, zoom, colours");
+    begin(); put_str("Label"); put_int(0xFF00FF00); put_float(1.0f); put_float(2.0f); put_float(3.0f); put_float(20.0f);
+    put_int(1); put_int(-1); put_int(-1); put_local(0); op(0x0B44);
+    check(strcmp(called, "label_create") == 0 && last.self == label_pool && last.a == 2047 && LOCAL(0) == 2047 &&
+          (uint32_t)last.c == 0x00FF00FF && last.b == 0 && lf[0] == 1.0f && lf[2] == 3.0f && lf[3] == 20.0f &&
+          strcmp(last.s[1], "65535 65535") == 0, "0B44 CLabelPool::Create at the highest free id, ARGB -> RGBA, behind walls");
+    begin(); put_int(9); put_str("Changed"); op(0x0C47);
+    check(strcmp(called, "label_create") == 0 && last.a == 9 && strcmp(last.s[0], "Changed") == 0 &&
+          (uint32_t)last.c == 0x000000AB && last.b == 0 && lf[3] == 4.0f, "0C47 3D text 9 created again with its new text");
+    begin(); put_int(9); op(0x0B45);
+    check(strcmp(called, "label_delete") == 0 && last.a == 9, "0B45 CLabelPool::Delete(9)");
+    op_cond0(0x0AF6);
+    check(strcmp(called, "local_spawn") == 0 && last.self == lp, "0AF6 CLocalPlayer::Spawn");
+    begin(); put_int(68); op(0x0AFD);
+    check(strcmp(called, "local_set_special") == 0 && last.a == 68, "0AFD SetSpecialAction(68)");
+    begin(); put_int(1); op(0x0B79);
+    check(strcmp(called, "input_open") == 0 && last.self == input, "0B79 true: CInput::Open");
+    begin(); put_int(0); op(0x0B79);
+    check(strcmp(called, "input_close") == 0, "0B79 false: CInput::Close");
+    begin(); put_int(1); op(0x0BD6);
+    check(strcmp(called, "scoreboard_enable") == 0 && last.self == scoreboard, "0BD6 true: CScoreboard::Enable");
+    begin(); put_int(0); op(0x0BD6);
+    check(strcmp(called, "scoreboard_close") == 0 && last.a == 1, "0BD6 false: CScoreboard::Close(hide cursor)");
+    begin(); put_int(2); put_int(50); op(0x0B22);
+    check(AT(base, L->sendrates + 4, int) == 50, "0B22 in-car send rate 50");
+    begin(); put_int(12); put_int(2); op(0x0C82);
+    check(strcmp(called, "send_unoccupied") == 0 && last.a == 12 && last.b == 2, "0C82 SendUnoccupiedData(12, seat 2)");
+    begin(); put_int(12); op(0x0C85);
+    check(strcmp(called, "send_trailer") == 0 && last.a == 12, "0C85 SendTrailerData(12)");
+    op_cond0(0x0C83);
+    check(strcmp(called, "send_onfoot") == 0 && last.self == lp, "0C83 SendOnfootData");
+    begin(); put_int(12); op(0x0C81);
+    check(strcmp(called, "send_incar") == 0, "0C81 SendIncarData");
+    op_cond0(0x0C84); check(strcmp(called, "send_aim") == 0, "0C84 SendAimData");
+    begin(); put_int(12); put_int(1); op(0x0C86); check(strcmp(called, "send_passenger") == 0, "0C86 SendPassengerData");
+    op_cond0(0x0C87); check(strcmp(called, "send_stats") == 0, "0C87 SendStats");
+    op_cond0(0x0C88); check(strcmp(called, "update_weapons") == 0, "0C88 UpdateWeapons");
 
     /* reconnect */
     last.called = 0;

@@ -65,7 +65,8 @@ typedef struct {
     const char *name;
     uint32_t entry;                 /* AddressOfEntryPoint: identifies the build */
     /* globals holding the object pointers */
-    uint32_t netgame, chat, input, dialog, game, scoreboard, string_compressor;
+    uint32_t netgame, chat, input, dialog, game, scoreboard, string_compressor, death_window;
+    uint32_t sendrates;             /* on-foot, in-car and aim send rates (ints) */
     /* functions */
     uint32_t add_message;           /* CChat::AddMessage(color, text) */
     uint32_t local_chat;            /* CLocalPlayer::Chat(text) */
@@ -87,6 +88,15 @@ typedef struct {
     uint32_t update_players;                        /* CNetGame::UpdatePlayers (scores, pings) */
     uint32_t current_anim;                          /* CPed::GetCurrentAnimation: id | flags << 16 */
     uint32_t anim_entry;                            /* "FILE:NAME" of SA-MP animation id, or NULL */
+    uint32_t process_input;                         /* CGame::ProcessInputEnabling */
+    uint32_t local_spawn, local_set_special;         /* CLocalPlayer::Spawn / SetSpecialAction */
+    uint32_t input_open, input_close;               /* CInput::Open / Close */
+    uint32_t scoreboard_enable, scoreboard_close;   /* CScoreboard::Enable / Close */
+    uint32_t td_create, td_delete;                  /* CTextDrawPool::Create / Delete */
+    uint32_t label_create, label_delete;            /* CLabelPool::Create / Delete */
+    /* CLocalPlayer's senders */
+    uint32_t send_unoccupied, send_onfoot, send_aim, send_trailer, send_passenger;
+    uint32_t send_stats, update_weapons, send_incar;
     /* CNetGame: hostname at host + 0x101, port at host + 0x205, last
      * connect attempt at state + 4 */
     uint16_t ng_rakclient, ng_host, ng_state, ng_pools;
@@ -97,10 +107,15 @@ typedef struct {
     uint16_t pp_local_id, pp_local_name, pp_local_obj, pp_local_ping, pp_local_score;
     /* CPlayerInfo */
     uint8_t info_remote, info_name, info_ping, info_score, info_npc;
-    /* CRemotePlayer: health at armour + 4; the animation from the on-foot sync */
-    uint16_t remote_ped, remote_special, remote_armour, remote_status, remote_anim;
+    /* CRemotePlayer: health at armour + 4; the last sync data, the animation
+     * at on-foot + 0x40 and the trailer's right after the in-car data */
+    uint16_t remote_ped, remote_special, remote_armour, remote_status;
+    uint16_t remote_onfoot, remote_incar, remote_passenger, remote_aim;
     /* CLocalPlayer, CGame */
     uint16_t local_ped, local_active, game_cursor;
+    /* CObjectPool: the CObject* array; used flags from +4, so it holds
+     * (obj_objects - 4) / 4 objects */
+    uint16_t obj_objects;
 } Build;
 
 /* samp.c */
@@ -110,8 +125,11 @@ void *samp_netgame(void);
 void *samp_global(uint32_t rva);
 void *samp_pool(int which);
 void *samp_rakclient(void);
+void *samp_rakpeer(void);
 int samp_state(void);
 void *samp_local_player(void);
+void *samp_remote_player(int id);
+int samp_vehicle_id(int handle);
 int samp_install(void);
 void samp_tick(void);
 void copy_string(char *dst, const char *src, size_t size);
@@ -126,11 +144,22 @@ int dialog_response_sent(const uint8_t *data, int bits);
 /* textdraws.c */
 void textdraws_install(void);
 
+/* threads.c */
+void threads_install(void);
+void threads_tick(void);
+
+/* sends.c */
+void sends_install(void);
+
+/* info.c */
+void info_install(void);
+
 /* console.c */
 void console_install(void);
 
 /* raknet.c */
 void raknet_install(void);
 void raknet_tick(void);
+int raknet_send(int rpc, const uint8_t *data, int bits, int reliability);
 
 #endif

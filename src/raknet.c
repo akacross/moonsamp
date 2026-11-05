@@ -751,6 +751,20 @@ static int send_packet(BitStream *bs, int priority, int reliability, int channel
     return ((SendFn)(*(void ***)rc)[6])(rc, bs, priority, reliability, channel);
 }
 
+/* Sends bits of data MSB first, as an RPC (rpc >= 0, HIGH_PRIORITY,
+ * RELIABLE_ORDERED) or a packet (HIGH_PRIORITY, the given reliability). It
+ * goes through the hooks, as SA-MP's own does. */
+int raknet_send(int rpc, const uint8_t *data, int bits, int reliability)
+{
+    BitStream bs;
+    int ok;
+    bs_init(&bs);
+    bs_write_bits(&bs, data, bits, 0);
+    ok = rpc >= 0 ? send_rpc(rpc, &bs, 1, 9, 0, 0) : send_packet(&bs, 1, reliability, 0);
+    bs_release(&bs);
+    return ok;
+}
+
 /* 0B41 raknet send_rpc %1d% bit_stream %2d% priority %3d% reliability %4d% ordering_channel %5d% shift_timestamp %6d% */
 static int8_t __stdcall op_0B41(Script *s)
 {
@@ -789,18 +803,18 @@ static int8_t __stdcall op_0BF6(Script *s)
 {
     BitStream *bs, out;
     uint8_t head[2];
-    void *rc;
+    void *peer;
     script_collect(s, 2);
     bs = ScriptParams[1].p;
     head[0] = ID_RPC;
     head[1] = (uint8_t)ScriptParams[0].i;
-    if (!bs || !orig_handle_rpc || !have_server_id || !(rc = rak_client()))
+    if (!bs || !orig_handle_rpc || !have_server_id || !(peer = samp_rakpeer()))
         return 0;
     bs_init(&out);
     bs_write_bytes(&out, head, 2);
     bs_write_compressed(&out, (uint32_t)bs->bits_used);
     bs_write_bits(&out, bs->data, bs->bits_used, 0);
-    orig_handle_rpc(rc, out.data, (out.bits_used + 7) >> 3, server_id[0], server_id[1]);
+    orig_handle_rpc(peer, out.data, (out.bits_used + 7) >> 3, server_id[0], server_id[1]);
     bs_release(&out);
     return 0;
 }
