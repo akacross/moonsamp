@@ -84,7 +84,13 @@ static uint8_t game[0x100], input[0x1B00], dialog[0x100];
 static int cursor_calls, input_enabling;
 static void THISCALL s_cursor(void *g, int mode, int hide) { (void)hide; cursor_calls++; AT(g, L->game_cursor, int) = mode; }
 static void THISCALL s_process_input(void *g) { (void)g; input_enabling++; }
-static LRESULT CALLBACK game_wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp) { return DefWindowProcA(w, m, wp, lp); }
+static LPARAM game_keys[256];           /* last key message lParam per key, negated for up */
+static LRESULT CALLBACK game_wndproc(HWND w, UINT m, WPARAM wp, LPARAM lp)
+{
+    if ((m == WM_KEYDOWN || m == WM_KEYUP) && wp < 256)
+        game_keys[wp] = m == WM_KEYDOWN ? lp : -lp;
+    return DefWindowProcA(w, m, wp, lp);
+}
 
 static void jump(uintptr_t base, uint32_t rva, void *to)
 {
@@ -444,9 +450,14 @@ __declspec(dllexport) int run(void)
     check(!cond1(0x0C7E, 0), "~ while typing in the chat does not open the console");
     AT(input, 0x14E0, int) = 0;
     cursor_calls = 0;
+    SendMessageA(hwnd, WM_KEYDOWN, 'W', 0x00110001);
+    check(game_keys['W'] == 0x00110001, "the game sees W held");
     key(VK_OEM_3);
     SendMessageA(hwnd, WM_CHAR, '`', 0);
     check(cond1(0x0C7E, 0), "~ opens the console (0C7E)");
+    check(game_keys['W'] == -(LPARAM)0xC0110001, "opening it releases W in the game");
+    SendMessageA(hwnd, WM_KEYDOWN, 'W', 0x40110001);
+    check(game_keys['W'] == -(LPARAM)0xC0110001, "and keeps W from the game while open");
     check(cursor_calls == 1 && AT(game, L->game_cursor, int) == 3, "it shows SA-MP's cursor");
     begin(); put_str("{66CCFF}sampfuncsLog line"); opbuf[n++] = 0; op(0x0B78);
     begin(); put_str("{FFFF00}[ML] {C0C0C0}scriptHelper's copy"); opbuf[n++] = 0; op(0x0B78);

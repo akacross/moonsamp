@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.2
+
+Opening the console no longer leaves keys held down.
+
+**Fixed**
+
+- Keys held when the console opens, or when a dxut edit box or list box
+  takes the keyboard, are released in the game: a car coasts instead of
+  driving on, and nothing stays pressed after the console closes.
+
 ## 0.7.1
 
 The console and dxut dialogs no longer slow the game down.

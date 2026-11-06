@@ -41,6 +41,8 @@ static int width, height, font_basis;
 static HWND window;
 static WNDPROC orig_wndproc;
 static DWORD wndproc_wait;
+static LPARAM held[256];                /* key-down lParams the game saw, 0 if up */
+static UINT held_up[256];
 
 int overlay_width(void) { return width; }
 int overlay_height(void) { return height; }
@@ -517,10 +519,34 @@ static void hook_device(IDirect3DDevice9 *d)
     ms_log("overlay: drawing on device %08lX", (DWORD)d);
 }
 
+/* The game reads the keyboard from these messages: once the console or a
+ * dialog takes the keys, the ones the game holds down are released, or they
+ * stay down (a car keeps driving). */
+static void release_keys(HWND w)
+{
+    int vk;
+    for (vk = 0; vk < 256; vk++)
+        if (held[vk]) {
+            LPARAM lp = (held[vk] & 0x01FF0000) | 0xC0000001;
+            held[vk] = 0;
+            CallWindowProcA(orig_wndproc, w, held_up[vk], vk, lp);
+        }
+}
+
 static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
-    if (console_input(msg, wp, lp) || dxut_input(msg, wp, lp))
+    int key = msg >= WM_KEYFIRST && msg <= WM_KEYLAST;
+    if (console_input(msg, wp, lp) || dxut_input(msg, wp, lp)) {
+        if (key)
+            release_keys(w);
         return 0;
+    }
+    if (wp < 256 && (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)) {
+        held[wp] = lp | 1;
+        held_up[wp] = msg == WM_KEYDOWN ? WM_KEYUP : WM_SYSKEYUP;
+    } else if (wp < 256 && (msg == WM_KEYUP || msg == WM_SYSKEYUP)) {
+        held[wp] = 0;
+    }
     return CallWindowProcA(orig_wndproc, w, msg, wp, lp);
 }
 
