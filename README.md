@@ -140,6 +140,8 @@ were dropped.
                         # against gta_sa.exe's script engine and a mapped (not
                         # running) samp.dll with fake objects
     test/run.sh "" samp-dlls/*/samp.dll    # the SA-MP tests on every build
+    D3D9=path/to/dxvk/x32/d3d9.dll test/run.sh   # overlay_test on the GPU,
+                        # where it also checks the overlay's frame time
 
 Release: commit, tag `v<VERSION>`, push the tag, then
 `python3 tools/release.py v<VERSION> "moonsamp <VERSION>" notes.md`. It builds
