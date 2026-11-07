@@ -34,6 +34,23 @@ static void op(int code, const char *types, int nout)
 
 static const char *text_get(const char *key) { return ((TextGetFn)0x6A0050)((void *)0xC1B340, key); }
 
+/* Another mod's hook on CText::Get, a jmp [address] as some clients write it. */
+static const char *__attribute__((fastcall)) other_get(void *text, int edx, const char *key)
+{
+    (void)text, (void)edx, (void)key;
+    return "other hook";
+}
+static void *other_cell = (void *)other_get;
+static void other_hook(void)
+{
+    uint8_t *p = (uint8_t *)0x6A0050;
+    DWORD old;
+    VirtualProtect(p, 6, PAGE_EXECUTE_READWRITE, &old);
+    p[0] = 0xFF, p[1] = 0x25;
+    *(void ***)(p + 2) = &other_cell;
+    VirtualProtect(p, 6, old, &old);
+}
+
 static int file_has(const char *path, const char *text)
 {
     static char buf[1 << 16];
@@ -134,12 +151,14 @@ __declspec(dllexport) int run(void)
     op(0x2608, "s", 1);
     check(out[0] == 5, "2608 get_text_length");
 
+    other_hook();
     in[0] = ptr("MSTEST"); in[1] = ptr("%d-%s %.2f|%05d|%x|%-3s|"); in[2] = 42; in[3] = ptr("ok");
     in[4] = fi(3.14159f); in[5] = -12; in[6] = 255; in[7] = ptr("a");
     op(0x2609, "ssisfiise", 0);
     check(!strcmp(text_get("MSTEST"), "42-ok 3.14|-0012|ff|a  |"), "2609 a formatted label, served by CText::Get");
     check(!strcmp(text_get("mstest"), "42-ok 3.14|-0012|ff|a  |"), "labels ignore case");
     check(*text_get("") == 0, "an empty key is empty text");
+    check(!strcmp(text_get("NOSUCH"), "other hook"), "over a jmp [address] hook, other keys go on to it");
     sprintf(path, "%s\\test.fxt", dir);
     {
         FILE *f = fopen(path, "wb");

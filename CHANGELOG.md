@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.2
+
+**Fixed**
+
+- Without CLEO, text labels and FXT files (`addTextLabelFormatted`,
+  `loadFxt`, `unloadFxt`) did nothing when another mod had hooked
+  CText::Get with a `jmp [address]` (seen on 0.3.DL through the URP
+  launcher): moonsamp only went over SA-MP's plain jmp. It now goes over a
+  `jmp [address]` or a push / ret too, and the other hook still answers
+  every other text. A start it cannot go over is logged once, not on each
+  label.
+
 ## 0.11.1
 
 **Fixed**

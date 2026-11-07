@@ -290,13 +290,17 @@ static const char *__attribute__((fastcall)) hook_text_get(void *text, int edx, 
     return found ? found : ((TextGetFn)(void *)text_tramp)(text, key);
 }
 
-/* Installed with the first text: over SA-MP's own jump if it is there. */
+/* Installed with the first text, over another hook if there is one: a jmp
+ * (SA-MP's), a jmp [address] or a push / ret, which the trampoline keeps. */
 static int hook_text(void)
 {
     static const uint8_t prologue[5] = { 0x83, 0xEC, 0x20, 0x56, 0x57 };   /* sub esp,20h; push esi; push edi */
+    static int refused;
     uint8_t jmp[5] = { 0xE9 }, *t;
     if (text_tramp)
         return 1;
+    if (refused)
+        return 0;
     t = VirtualAlloc(NULL, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!t)
         return 0;
@@ -304,6 +308,8 @@ static int hook_text(void)
         uint8_t *to = TEXT_GET + 5 + *(int32_t *)(TEXT_GET + 1);
         t[0] = 0xE9;
         *(int32_t *)(t + 1) = (int32_t)(to - (t + 5));
+    } else if ((TEXT_GET[0] == 0xFF && TEXT_GET[1] == 0x25) || (TEXT_GET[0] == 0x68 && TEXT_GET[5] == 0xC3)) {
+        memcpy(t, TEXT_GET, 6);                             /* absolute: runs the same anywhere */
     } else if (!memcmp(TEXT_GET, prologue, 5)) {
         memcpy(t, prologue, 5);
         t[5] = 0xE9;
@@ -311,6 +317,7 @@ static int hook_text(void)
     } else {
         ms_log("cleo5: CText::Get starts with %02X %02X; FXT texts are off", TEXT_GET[0], TEXT_GET[1]);
         VirtualFree(t, 0, MEM_RELEASE);
+        refused = 1;
         return 0;
     }
     text_tramp = t;
