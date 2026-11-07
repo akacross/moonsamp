@@ -4,7 +4,9 @@ The SA-MP API for MoonLoader without SAMPFUNCS or CLEO. Drop `moonsamp.asi`
 into the game folder; scripts run unchanged.
 
 It stays off when `SAMPFUNCS.asi` is installed, and registers its opcodes
-through CLEO when `CLEO.asi` is installed.
+through CLEO when `CLEO.asi` is installed: CLEO 4 or CLEO 5, in the game
+folder, `scripts\` or `plugins\`. SAMPFUNCS does not run beside CLEO 5;
+with moonsamp, MoonLoader scripts and CLEO 5 scripts run together.
 
 ## How MoonLoader talks to SAMPFUNCS
 
@@ -26,6 +28,22 @@ a SAMPFUNCS opcode (0AF8-0C9x) that SAMPFUNCS registers with
   script whose code is `0AA5 call <MoonLoader fn>` then a return opcode
   (`0B43` for commands, `0BE0` for hooks). SAMPFUNCS runs that code on the
   spot; so does moonsamp.
+
+With CLEO:
+
+- A callback stub's opcodes run on moonsamp's own handlers (0AA5 and the
+  return), not through CLEO: MoonLoader runs opcodes on the stub's script
+  while 0AA5 calls it, and CLEO 5 refuses an opcode on a script still inside
+  one (silently, for a script it did not start). Anything else in a stub
+  goes through the table at 0x469FEE: CLEO 4 replaces only that one, so
+  ProcessOneCommand's copy at 0x469EF0 still has the game's 27 slots.
+- CLEO 4 hooks 0x4667DB and so sets MoonLoader's CLEO marker; CLEO 5 does
+  not, so moonsamp sets it whenever the byte is not already `E9`.
+- CLEO 5 marks a script inside an opcode (bit 1 at +0xDF) and suspends one
+  that starts another before the first ends. A hook can fire while its
+  script is inside an opcode, so moonsamp clears the bit for the stub and
+  puts it back after. Under CLEO 4 any bit of +0xDF means "a CLEO script",
+  so it is left alone there.
 
 ## Supported
 
@@ -147,9 +165,9 @@ an int, `f` a float, `s` a string inline), adds `nout` local variables for
 the outputs, calls the handler on a scratch script and copies the locals
 into `out`; it returns the condition. As in NewOpcodes, a matrix, quat or
 vector of 1 to 10 is one of ten scratch ones and colpoint 1 the scratch
-colpoint; a NULL one reads as zeroes. With CLEO and NewOpcodes.cleo both
-installed, CLEO keeps NewOpcodes' handlers and `moonsamp_run` uses
-moonsamp's.
+colpoint; a NULL one reads as zeroes. With CLEO, moonsamp registers none
+of them with it (CLEO 5 ships NewOpcodes.cleo, whose handlers its scripts
+expect); `moonsamp_run` uses moonsamp's.
 
 ## Diagnostics
 
@@ -170,6 +188,7 @@ were dropped.
                         # against gta_sa.exe's script engine and a mapped (not
                         # running) samp.dll with fake objects
     test/run.sh "" samp-dlls/*/samp.dll    # the SA-MP tests on every build
+    CLEO="cleo4/CLEO.asi cleo5/CLEO.asi" test/run.sh   # cleo_test beside each CLEO
     D3D9=path/to/dxvk/x32/d3d9.dll test/run.sh   # overlay_test on the GPU,
                         # where it also checks the overlay's frame time
 

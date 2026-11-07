@@ -144,7 +144,9 @@ static int mark_loaded(void)
     static const uint8_t sf[6] = { 0x8B, 0x0D, 0x84, 0xCB, 0xB7, 0x00 };   /* mov ecx, [0xB7CB84] */
     static const uint8_t cleo[6] = { 0x8A, 0x86, 0xDC, 0x00, 0x00, 0x00 }; /* mov al, [esi+0xDC] */
     int ok = mark((uint8_t *)0x561931, sf, samp_tick, "SAMPFUNCS");
-    if (!script_cleo_present())
+    /* CLEO 4 hooks 0x4667DB itself; CLEO 5 does not, and MoonLoader then
+     * thinks no CLEO is there. */
+    if (*(uint8_t *)0x4667DB != 0xE9)
         ok &= mark((uint8_t *)0x4667DB, cleo, NULL, "CLEO");
     return ok;
 }

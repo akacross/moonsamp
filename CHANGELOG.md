@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.9.0
+
+MoonLoader scripts beside CLEO 5, which SAMPFUNCS does not run with, and
+fixes beside CLEO 4. Checked in game with no CLEO, CLEO 4.4.4 and CLEO 5.5.0
+(self-test 90 of 90 with CLEO 5).
+
+**Added**
+
+- CLEO 5: MoonLoader registers its SA-MP functions (moonsamp sets the CLEO
+  marker CLEO 5 leaves alone), and chat commands, console commands and
+  RakNet hooks run.
+- CLEO.asi is found in `scripts\` and `plugins\` too, where CLEO 5.5 may
+  sit; moonsamp.log names the CLEO version.
+
+**Fixed**
+
+- With CLEO 4, every callback (chat and console commands, RakNet hooks)
+  would have crashed: CLEO 4 replaces only one of the game's two opcode
+  table references, and stubs ran through the other.
+- With CLEO, moonsamp no longer registers its NewOpcodes with CLEO, so
+  NewOpcodes.cleo (shipped with CLEO 5) keeps its own; `newopcodes.lua`
+  uses moonsamp's.
+
 ## 0.8.0
 
 95 of NewOpcodes' opcodes, and a MoonLoader lib to call them. The in-game

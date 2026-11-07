@@ -10,6 +10,7 @@
 #
 #   test/run.sh [path/to/gta_sa.exe] [samp.dll...]
 #
+# With CLEO="path/CLEO.asi ..." (CLEO 4 or 5), cleo_test.c runs beside each.
 # Each samp.dll (any supported build) gets raknet_test, phase2_test and
 # overlay_test; with none given, the game folder's. test/run.sh ""
 # samp-dlls/*/samp.dll runs every build. overlay_test draws on a real
@@ -26,7 +27,7 @@ shift || true
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 export WINEPREFIX="$work/prefix" WINEDEBUG=-all
 OUT="$work/moonsamp.asi" "$root/build.sh" >/dev/null
-for t in host_test newopcodes_test raknet_test phase2_test overlay_test; do
+for t in host_test newopcodes_test cleo_test raknet_test phase2_test overlay_test; do
     i686-w64-mingw32-gcc -O2 -Wall -shared -static -o "$work/$t.dll" "$here/$t.c"
 done
 i686-w64-mingw32-gcc -O2 -Wall -shared -o "$work/MoonLoader.asi" "$here/fake_moonloader.c"
@@ -88,6 +89,24 @@ run() {
 failed=()
 run host_test
 run newopcodes_test
+# cleo_test once per CLEO.asi in CLEO, in a folder of its own with the
+# bass.dll and the .cleo plugins found beside it
+k=0
+for cleo in ${CLEO:-}; do
+    k=$((k + 1))
+    patch_exe cleo_test
+    mkdir -p "cleo$k/cleo/cleo_plugins"
+    cp cleo_test.exe cleo_test.dll moonsamp.asi "cleo$k/"
+    cp "$cleo" "cleo$k/CLEO.asi"
+    src="$(dirname "$cleo")"
+    [ -e "$src/bass.dll" ] && cp "$src/bass.dll" "cleo$k/"
+    cp "$src"/cleo/*.cleo "cleo$k/cleo/" 2>/dev/null || true
+    cp "$src"/cleo/cleo_plugins/*.cleo "cleo$k/cleo/cleo_plugins/" 2>/dev/null || true
+    echo "=== cleo_test ($cleo)"
+    (cd "cleo$k" && timeout 120 wine cleo_test.exe) || { status=1; failed+=("cleo_test $cleo"); }
+    echo "--- moonsamp.log"
+    cat "cleo$k/moonsamp.log" 2>/dev/null || true
+done
 for dll in "$@"; do
     cp "$dll" samp.dll
     run raknet_test "$dll"

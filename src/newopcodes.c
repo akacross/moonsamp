@@ -1204,10 +1204,12 @@ void newopcodes_install(void)
         { 0x0D79, op_0D79 }, { 0x0D7A, op_0D7A }, { 0x0D7B, op_0D7B },
     };
     size_t i;
-    int refused = 0;
-    for (i = 0; i < sizeof ops / sizeof ops[0]; i++)
-        refused += !script_try_register(ops[i].op, ops[i].fn);
-    if (refused)
-        ms_log("newopcodes: CLEO refused %d opcodes (NewOpcodes.cleo installed?); moonsamp_run still has them",
-               refused);
+    /* With CLEO they stay moonsamp_run's: CLEO 5 ships NewOpcodes.cleo,
+     * whose handlers its scripts expect. */
+    for (i = 0; i < sizeof ops / sizeof ops[0]; i++) {
+        if (script_cleo_present())
+            script_keep(ops[i].op, ops[i].fn);
+        else
+            script_register(ops[i].op, ops[i].fn);
+    }
 }

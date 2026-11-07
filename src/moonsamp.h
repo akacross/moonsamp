@@ -38,6 +38,8 @@ int ms_patch(void *addr, const void *bytes, size_t n);
 /* script.c */
 int script_host_install(void);
 int script_cleo_present(void);
+uint32_t script_cleo_version(void);
+void script_keep(uint16_t op, OpcodeFn fn);
 extern int script_trace;
 void script_register(uint16_t op, OpcodeFn fn);
 int script_try_register(uint16_t op, OpcodeFn fn);
