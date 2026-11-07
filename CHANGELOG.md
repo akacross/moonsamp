@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.11.0
+
+The rest of NewOpcodes: drawing and audio streams, so all 126 of its
+opcodes run. The in-game check passes 9 of 9 beside CLEO 5, and everything
+it draws shows.
+
+**Added**
+
+- NewOpcodes drawing: 2D shapes and their vertices, sprites (plain,
+  gradient, turned), texts in the game's fonts, temporary coronas, lights,
+  temporary and permanent shadows, spotlights, and textures from TXD, PNG,
+  BMP or DDS files. Shapes, sprites and texts are drawn once a frame under
+  the HUD; nothing is hooked until a script draws.
+- NewOpcodes audio streams (0D67-0D71) on BASS: position in seconds,
+  effects and their parameters, attributes and 3D attributes. NewOpcodes
+  itself has them as empty stubs.
+- `newopcodes.lua` has a function for each; its audio ones take
+  MoonLoader's AudioStream handles, as `cleo5.lua`'s do.
+
+**Fixed (against NewOpcodes)**
+
+- Spotlights draw: NewOpcodes never installs its spotlight hook.
+- Permanent shadows last their time, not 1 ms, and a turned shadow keeps
+  its shape.
+- Shape vertices go to the pointer a script gives.
+
 ## 0.10.0
 
 CLEO 5's own opcodes for MoonLoader scripts, with or without CLEO. The

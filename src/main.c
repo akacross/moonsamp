@@ -188,6 +188,7 @@ static void start(HMODULE self)
     if (!script_host_install())
         return;
     newopcodes_install();
+    draw_install();
     cleo5_install();
     if (!samp_install())
         return;

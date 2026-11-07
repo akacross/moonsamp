@@ -83,14 +83,15 @@ for name, fn in pairs(no) do
         ops[last.op] = name
     end
 end
-local c = io.open(arg[0]:gsub('[^/]+$', '') .. '../src/newopcodes.c'):read('*a')
+local dir = arg[0]:gsub('[^/]+$', '') .. '../src/'
+local c = io.open(dir .. 'newopcodes.c'):read('*a') .. io.open(dir .. 'draw.c'):read('*a')
 local registered, missing = 0, {}
 for hex in c:gmatch('{ 0x(0D%x%x), op_') do
     registered = registered + 1
     if not ops[tonumber(hex, 16)] then missing[#missing + 1] = hex end
 end
 check(registered > 0 and names == registered and #missing == 0,
-    ('a function for each of the %d opcodes newopcodes.c registers (%d, missing %s)')
+    ('a function for each of the %d opcodes newopcodes.c and draw.c register (%d, missing %s)')
         :format(registered, names, table.concat(missing, ' ')))
 
 print(('%d passed, %d failed'):format(passed, failed))

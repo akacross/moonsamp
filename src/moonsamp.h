@@ -127,6 +127,8 @@ typedef struct {
 
 /* newopcodes.c */
 void newopcodes_install(void);
+void draw_install(void);
+void draw_tick(void);
 
 /* cleo5.c */
 void cleo5_install(void);

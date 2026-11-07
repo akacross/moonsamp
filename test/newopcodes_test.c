@@ -398,6 +398,58 @@ __declspec(dllexport) int run(void)
         check(close_to(fo(0), 5.467f) && close_to(fo(1), 12), "0D58 sun size");
     }
 
+    /* ---- drawing: queued, drawn by the game's frame, which never runs here ---- */
+    {
+        struct { float x, y, z, rhw; uint32_t color; float u, v; } verts[2];
+        uint8_t *site = (uint8_t *)0x53E293, *stub;
+        int k, full = 0;
+        memset(verts, 0, sizeof verts);
+        in[0] = ptr(verts), in[1] = 2, in[2] = fi(10), in[3] = fi(20), in[4] = fi(0), in[5] = fi(1);
+        in[6] = 1, in[7] = 2, in[8] = 3, in[9] = 4, in[10] = fi(0.25f), in[11] = fi(0.5f), in[12] = 0, in[13] = 0;
+        op(0x0D41, "iiffffiiiiffii", 0);
+        check(verts[1].x == 10 && verts[1].y == 20 && verts[1].rhw == 1 && verts[1].u == 0.25f && verts[0].x == 0,
+              "0D41 sets the second vertex");
+        check(verts[1].color == 0x04010203, "0D41 colour as D3D's ARGB");
+        in[12] = 1;
+        op(0x0D41, "iiffffiiiiffii", 0);
+        check(close_to(verts[1].x, 1910) && close_to(verts[1].u, 0.75f), "0D41 invertX from the screen width");
+        verts[0].x = 10, verts[0].y = 0;
+        in[0] = ptr(verts), in[1] = 1, in[2] = fi(0), in[3] = fi(0), in[4] = fi(90);
+        op(0x0D45, "iifff", 0);
+        check(close_to(verts[0].x, 0) && close_to(verts[0].y, -10), "0D45 rotates around a point, degrees");
+        in[0] = 1, in[1] = 21;
+        op(0x0D41, "iiffffiiiiffii", 0);
+        check(1, "0D41 ignores a scratch vertex past 20");
+
+        check(*site == 0xE8 && site + 5 + *(int32_t *)(site + 1) == (uint8_t *)0x60F8C0, "Render2dStuff calls 0x60F8C0 before drawing");
+        in[0] = 5, in[1] = 0, in[2] = 2, in[3] = 1, in[4] = 1, in[5] = 5, in[6] = 6, in[7] = 0;
+        op(0x0D40, "iiiiiiii", 0);
+        check(cond == 1, "0D40 queues a shape");
+        stub = site + 5 + *(int32_t *)(site + 1);
+        check(stub != (uint8_t *)0x60F8C0 && stub[0] == 0x60 && stub[1] == 0x9C && stub[2] == 0xE8 && stub[9] == 0xE9 &&
+              stub + 14 + *(int32_t *)(stub + 10) == (uint8_t *)0x60F8C0,
+              "and hooks the call, keeping the registers and going on to 0x60F8C0");
+        site = (uint8_t *)0x53E1E0;
+        stub = site + 5 + *(int32_t *)(site + 1);
+        check(*site == 0xE8 && stub[0] == 0x60 && stub + 14 + *(int32_t *)(stub + 10) == (uint8_t *)0x742CF0,
+              "spotlights go in before CWeaponEffects::Render");
+        for (k = 0; k < 100; k++) {
+            op(0x0D40, "iiiiiiii", 0);
+            if (!cond)
+                full++;
+        }
+        check(full == 1, "the shape queue holds 100 a frame");
+        in[0] = ptr("tex"), in[1] = fi(1), in[2] = fi(2), in[3] = fi(1), in[4] = fi(1), in[5] = 1;
+        op(0x0D65, "sffffi", 0);
+        check(1, "0D65 queues a text");
+        in[0] = 0x1234;
+        op(0x0D7D, "i", 0);
+        check(1, "0D7D leaves a texture it did not load alone");
+        in[0] = 0, in[1] = fi(3);
+        op(0x0D68, "i", 1);
+        check(out[0] == 0, "0D68 is 0 with no bass.dll");
+    }
+
     printf("%d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
 }

@@ -15,7 +15,6 @@ formatted here with string.format. Audio stream functions take MoonLoader's
 AudioStream handles (or a BASS channel). setBit, clearBit and toggleBit
 return the changed value. openFile, closeFile and getFileSize (0A9A-0A9C)
 give the files the file functions take. ]]
-local ffi = require 'ffi'
 local core = require 'moonsamp'
 
 local M = { available = core.available }
@@ -37,24 +36,10 @@ local function format(fmt, ...)
     return tostring(fmt):format(...)
 end
 
--- MoonLoader's AudioStream is a userdata holding a shared_ptr whose object
--- has the BASS channel at +8 (MoonLoader 0.26: 0x1012BE60).
-local u32p = ffi.typeof('uint32_t *')
-local function channel(stream)
-    if type(stream) ~= 'userdata' then return stream end
-    local a = tonumber(ffi.cast('uintptr_t', ffi.cast('void *', stream)))
-    local c = a + 4 + (-a) % 4
-    local d = c + (-c) % 4
-    local p = ffi.cast(u32p, d + (-(d + 4)) % 4 + 4)[0]
-    if p == 0 then return 0 end
-    local obj = ffi.cast(u32p, p)[0]
-    if obj == 0 then return 0 end
-    return tonumber(ffi.cast(u32p, obj + 8)[0])
-end
-M.audioStreamChannel = channel
+M.audioStreamChannel = core.channel
 
 local function audio(name, op, inputs, outputs, cond)
-    M[name] = function(stream, ...) return call(op, inputs, outputs, cond, channel(stream), ...) end
+    core.define_audio(M, name, op, inputs, outputs, cond)
 end
 
 -- core

@@ -179,14 +179,28 @@ written, `e` the end of a variable argument list).
 
 ## NewOpcodes
 
-moonsamp also has 95 of the 128 opcodes of DK22Pac's NewOpcodes CLEO plugin
+moonsamp also has all 126 opcodes of DK22Pac's NewOpcodes CLEO plugin
 (0D00-0D7F, written anew from what they do): matrices, quaternions, vectors,
 ped bones, car components and atomics, model alpha, collided entities, line
 of sight and colpoints, strings, memory and struct fields, the sun, weather,
-traffic lights, car lights, vehicle dummies, projectiles, volumes and the
-screen size. Drawing (shapes, sprites, text, TXD / PNG / BMP / DDS textures,
-coronas, shadows, lights, spotlights) and the CLEO audio stream effects are
-not there yet.
+traffic lights, car lights, vehicle dummies, projectiles, volumes, the
+screen size, drawing and audio streams.
+
+- Drawing (src/draw.c): shapes, sprites and texts are queued and drawn
+  once a frame from Render2dStuff's empty call at 0x53E293 (plugin-sdk's
+  drawing event), under the HUD; spotlights from the effects pass
+  (0x53E1E0). Both hooks keep every register and go on to whatever call was
+  there, and go in with the first queued item. Coronas, shadows and lights
+  go straight to the game's lists. Textures load from TXD, PNG, BMP or DDS
+  files and stay until 0D7D.
+- Where NewOpcodes does not do what its opcodes say, moonsamp does: it
+  never installs its spotlight hook, gives permanent shadows a 1 ms life
+  (its arguments are out of order), turns a shadow's second axis by 90
+  radians, and 0D41 writes to the scratch vertices whatever pointer it is
+  given.
+- Audio streams (0D67-0D71) are empty stubs in NewOpcodes; here they work
+  on the BASS channel: position in seconds, BASS_FX_DX8_* effects and their
+  parameters, BASS_ATTRIB_* attributes and the 3D attributes.
 
 MoonLoader cannot run an opcode it has no function for, so
 `moonloader/lib/newopcodes.lua` (in the release zip) has one per opcode,

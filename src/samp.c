@@ -407,6 +407,7 @@ void samp_tick(void)
 {
     threads_tick();
     cleo5_tick();
+    draw_tick();
     if (!build())
         return;
     overlay_tick();

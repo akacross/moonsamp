@@ -1,6 +1,6 @@
 /* NewOpcodes (DK22Pac's CLEO plugin, 0D00-0D7F) without CLEO: matrices,
- * quaternions, bones, car components, collisions, strings and game state.
- * The drawing and CLEO audio stream opcodes are not here yet.
+ * quaternions, bones, car components, collisions, strings, audio streams and
+ * game state. The drawing ones are in draw.c.
  *
  * MoonLoader cannot run an opcode it has no function for, so
  * moonloader/lib/newopcodes.lua runs these through moonsamp_run (script.c). As in
@@ -1111,6 +1111,135 @@ static int8_t __stdcall op_0D5A(Script *s)
     return 0;
 }
 
+/* 0D67-0D71: audio streams are BASS channels (NewOpcodes has these as
+ * empty stubs). Effects are BASS_FX_DX8_* types and attributes BASS_ATTRIB_*. */
+static FARPROC bass_fn(FARPROC *cache, const char *name)
+{
+    HMODULE m;
+    if (!*cache && (m = GetModuleHandleA("bass.dll")))
+        *cache = GetProcAddress(m, name);
+    return *cache;
+}
+#define BASS(ret, name, args) \
+    static FARPROC p_##name; ret (WINAPI *name) args = (ret (WINAPI *) args)(void *)bass_fn(&p_##name, #name)
+
+/* 0D67 set_audiostream %1d% position_time %2d%, 0D68 %2d% = get_audiostream %1d% position_time */
+static int8_t __stdcall op_0D67(Script *s)
+{
+    BASS(uint64_t, BASS_ChannelSeconds2Bytes, (DWORD, double));
+    BASS(BOOL, BASS_ChannelSetPosition, (DWORD, uint64_t, DWORD));
+    DWORD h = (DWORD)script_int(s);
+    float t = script_float(s);
+    if (BASS_ChannelSeconds2Bytes && BASS_ChannelSetPosition)
+        BASS_ChannelSetPosition(h, BASS_ChannelSeconds2Bytes(h, t < 0 ? 0 : t), 0);
+    return 0;
+}
+
+static int8_t __stdcall op_0D68(Script *s)
+{
+    BASS(uint64_t, BASS_ChannelGetPosition, (DWORD, DWORD));
+    BASS(double, BASS_ChannelBytes2Seconds, (DWORD, uint64_t));
+    DWORD h = (DWORD)script_int(s);
+    double t = BASS_ChannelGetPosition && BASS_ChannelBytes2Seconds ?
+               BASS_ChannelBytes2Seconds(h, BASS_ChannelGetPosition(h, 0)) : -1;
+    store_float(s, t < 0 ? 0 : (float)t);
+    return 0;
+}
+
+/* 0D69 %4d% = set_audiostream %1d% effect %2d% priority %3d%, 0D6A remove_audiostream %1d% effect %2d% */
+static int8_t __stdcall op_0D69(Script *s)
+{
+    BASS(DWORD, BASS_ChannelSetFX, (DWORD, DWORD, int));
+    script_collect(s, 3);
+    store_int(s, BASS_ChannelSetFX ? (int32_t)BASS_ChannelSetFX(ScriptParams[0].u, ScriptParams[1].u, ScriptParams[2].i) : 0);
+    return 0;
+}
+
+static int8_t __stdcall op_0D6A(Script *s)
+{
+    BASS(BOOL, BASS_ChannelRemoveFX, (DWORD, DWORD));
+    script_collect(s, 2);
+    if (BASS_ChannelRemoveFX)
+        BASS_ChannelRemoveFX(ScriptParams[0].u, ScriptParams[1].u);
+    return 0;
+}
+
+/* 0D6B set_audiostream_effect %1d% parameters_from_buf %2d%, 0D6C ... to_buf, 0D6D reset_audiostream_effect %1d% */
+static int8_t __stdcall op_0D6B(Script *s)
+{
+    BASS(BOOL, BASS_FXSetParameters, (DWORD, const void *));
+    script_collect(s, 2);
+    if (BASS_FXSetParameters && ScriptParams[1].p)
+        BASS_FXSetParameters(ScriptParams[0].u, ScriptParams[1].p);
+    return 0;
+}
+
+static int8_t __stdcall op_0D6C(Script *s)
+{
+    BASS(BOOL, BASS_FXGetParameters, (DWORD, void *));
+    script_collect(s, 2);
+    if (BASS_FXGetParameters && ScriptParams[1].p)
+        BASS_FXGetParameters(ScriptParams[0].u, ScriptParams[1].p);
+    return 0;
+}
+
+static int8_t __stdcall op_0D6D(Script *s)
+{
+    BASS(BOOL, BASS_FXReset, (DWORD));
+    DWORD fx = (DWORD)script_int(s);
+    if (BASS_FXReset)
+        BASS_FXReset(fx);
+    return 0;
+}
+
+/* 0D6E set_audiostream %1d% attribute %2d% to %3d%, 0D6F %3d% = get_audiostream %1d% attribute %2d% */
+static int8_t __stdcall op_0D6E(Script *s)
+{
+    BASS(BOOL, BASS_ChannelSetAttribute, (DWORD, DWORD, float));
+    script_collect(s, 3);
+    if (BASS_ChannelSetAttribute)
+        BASS_ChannelSetAttribute(ScriptParams[0].u, ScriptParams[1].u, ScriptParams[2].f);
+    return 0;
+}
+
+static int8_t __stdcall op_0D6F(Script *s)
+{
+    BASS(BOOL, BASS_ChannelGetAttribute, (DWORD, DWORD, float *));
+    float v = 0;
+    script_collect(s, 2);
+    if (BASS_ChannelGetAttribute)
+        BASS_ChannelGetAttribute(ScriptParams[0].u, ScriptParams[1].u, &v);
+    store_float(s, v);
+    return 0;
+}
+
+/* 0D70 set_3d_audiostream %1d% 3d_attributes_mode %2d% min %3d% max %4d% iangle %5d% oangle %6d% outvol %7d%,
+ * 0D71 get_3d_audiostream %1d% ... to %2d%-%7d% */
+static int8_t __stdcall op_0D70(Script *s)
+{
+    BASS(BOOL, BASS_ChannelSet3DAttributes, (DWORD, int, float, float, int, int, float));
+    BASS(void, BASS_Apply3D, (void));
+    script_collect(s, 7);
+    if (BASS_ChannelSet3DAttributes && BASS_ChannelSet3DAttributes(ScriptParams[0].u, ScriptParams[1].i, ScriptParams[2].f,
+                                                                   ScriptParams[3].f, ScriptParams[4].i, ScriptParams[5].i,
+                                                                   ScriptParams[6].f) && BASS_Apply3D)
+        BASS_Apply3D();
+    return 0;
+}
+
+static int8_t __stdcall op_0D71(Script *s)
+{
+    BASS(BOOL, BASS_ChannelGet3DAttributes, (DWORD, DWORD *, float *, float *, DWORD *, DWORD *, float *));
+    DWORD h = (DWORD)script_int(s), mode = 0, in = 0, out = 0;
+    float min = 0, max = 0, vol = 0;
+    if (BASS_ChannelGet3DAttributes)
+        BASS_ChannelGet3DAttributes(h, &mode, &min, &max, &in, &out, &vol);
+    ScriptParams[0].i = (int32_t)mode, ScriptParams[1].f = min, ScriptParams[2].f = max;
+    ScriptParams[3].i = (int32_t)in, ScriptParams[4].i = (int32_t)out, ScriptParams[5].f = vol;
+    script_store(s, 6);
+    return 0;
+}
+
 /* 0D72 get_sfx_volume_to %2d% radio_volume_to %3d% type %1d%, 0D73
  * get_screen_width_to %2d% height_to %3d% type %1d%: type 1 for floats */
 static int8_t store_pair(Script *s, int a, int b)
@@ -1152,7 +1281,9 @@ void newopcodes_install(void)
         { 0x0D4E, op_0D4E }, { 0x0D4F, op_0D4F }, { 0x0D55, op_0D55 }, { 0x0D56, op_0D56 },
         { 0x0D57, op_0D57 }, { 0x0D58, op_0D58 }, { 0x0D59, op_0D59 }, { 0x0D5A, op_0D5A },
         { 0x0D5C, op_0D5C }, { 0x0D5D, op_0D5D }, { 0x0D5E, op_0D5E }, { 0x0D5F, op_0D5F },
-        { 0x0D60, op_0D60 }, { 0x0D72, op_0D72 }, { 0x0D73, op_0D73 }, { 0x0D74, op_0D74 },
+        { 0x0D60, op_0D60 }, { 0x0D67, op_0D67 }, { 0x0D68, op_0D68 }, { 0x0D69, op_0D69 },
+        { 0x0D6A, op_0D6A }, { 0x0D6B, op_0D6B }, { 0x0D6C, op_0D6C }, { 0x0D6D, op_0D6D },
+        { 0x0D6E, op_0D6E }, { 0x0D6F, op_0D6F }, { 0x0D70, op_0D70 }, { 0x0D71, op_0D71 }, { 0x0D72, op_0D72 }, { 0x0D73, op_0D73 }, { 0x0D74, op_0D74 },
         { 0x0D75, op_0D75 }, { 0x0D76, op_0D76 }, { 0x0D77, op_0D77 }, { 0x0D78, op_0D78 },
         { 0x0D79, op_0D79 }, { 0x0D7A, op_0D7A }, { 0x0D7B, op_0D7B },
     };

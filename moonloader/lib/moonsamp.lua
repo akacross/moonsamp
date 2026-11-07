@@ -95,6 +95,27 @@ function M.call(op, inputs, outputs, cond, ...)
     return unpack(r, 1, #outputs)
 end
 
+-- MoonLoader's AudioStream is a userdata holding a shared_ptr whose object
+-- has the BASS channel at +8 (MoonLoader 0.26: 0x1012BE60). Anything else
+-- is taken as a channel already.
+local u32p = ffi.typeof('uint32_t *')
+function M.channel(stream)
+    if type(stream) ~= 'userdata' then return stream end
+    local a = tonumber(ffi.cast('uintptr_t', ffi.cast('void *', stream)))
+    local c = a + 4 + (-a) % 4
+    local d = c + (-c) % 4
+    local p = ffi.cast(u32p, d + (-(d + 4)) % 4 + 4)[0]
+    if p == 0 then return 0 end
+    local obj = ffi.cast(u32p, p)[0]
+    if obj == 0 then return 0 end
+    return tonumber(ffi.cast(u32p, obj + 8)[0])
+end
+
+-- target[name] runs op on an audio stream, its first argument.
+function M.define_audio(target, name, op, inputs, outputs, cond)
+    target[name] = function(stream, ...) return M.call(op, inputs, outputs, cond, M.channel(stream), ...) end
+end
+
 -- target[name] runs op.
 function M.define(target, name, op, inputs, outputs, cond)
     target[name] = function(...) return M.call(op, inputs, outputs, cond, ...) end

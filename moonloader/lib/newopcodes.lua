@@ -11,8 +11,18 @@ outputs, as MoonLoader's own functions do. Handles are script handles;
 pointers are numbers. As in NewOpcodes, a matrix, quat or vector of 1 to 10
 is one of ten scratch ones in moonsamp, and colpoint 1 the scratch colpoint.
 Angles are degrees, but setMatrixRotation takes radians (NewOpcodes passes
-them to CMatrix::SetRotate as they are). The drawing and CLEO audio stream
-opcodes are not there yet. ]]
+them to CMatrix::SetRotate as they are).
+
+Drawing: shapes, sprites and texts are drawn once, on the frame they are
+called in, under the HUD. Shape vertices of 1 are 20 scratch ones in
+moonsamp, else a pointer to 28-byte vertices; sprite corners are in the
+640x448 screen, text and shape positions in pixels. Textures are pointers
+from loadTextureFrom*File or findTextureInTxd*; 0 draws without one. Entities
+for lights and coronas are pointers (getCharPointer and so on), or 0.
+
+Audio streams take MoonLoader's AudioStream handles (or a BASS channel).
+Effects are BASS_FX_DX8_* types, attributes BASS_ATTRIB_*; NewOpcodes itself
+leaves these empty. ]]
 local core = require 'moonsamp'
 
 local M = { available = core.available }
@@ -29,6 +39,10 @@ end
 
 local function def(name, op, inputs, outputs, cond)
     core.define(M, name, op, inputs, outputs, cond)
+end
+
+local function audio(name, op, inputs, outputs, cond)
+    core.define_audio(M, name, op, inputs, outputs, cond)
 end
 
 -- name, opcode, inputs, outputs, has a condition
@@ -121,6 +135,56 @@ def('getVehicleClassAndSubclass',        0x0D5E, 'i', 'ii')
 def('getVehicleDummyPosn',               0x0D5F, 'iibb', 'fff', true) -- (car, dummy, world, mirrored)
 -- (type, from entity, origin xyz, target xyz, target entity, force)
 def('createProjectile',                  0x0D60, 'iiffffffif', '', true)
+
+-- drawing
+-- (primType, texture, numVerts, verts, vertexAlpha, srcBlend, dstBlend, unused): false when the queue is full
+def('drawShape',                         0x0D40, 'iiiibiii', '', true)
+-- (verts, vertex 1.., x, y, z, rhw, r, g, b, a, u, v, invertX, invertY)
+def('setupShapeVertex',                  0x0D41, 'iiffffiiiiffbb', '')
+def('rotateShapeVertices',               0x0D45, 'iifff', '')         -- (verts, count, x, y, angle)
+def('loadTxd',                           0x0D42, 'ss', '', true)      -- (name, path)
+def('findTextureInTxdWithName',          0x0D44, 'ss', 'u', true)     -- (texture, txd)
+def('findTextureInTxdWithId',            0x0D46, 'si', 'u', true)     -- (texture, txd slot)
+-- (type, x, y, z, width, height, angle, distance, texture, intensity, r, g, b, realTimeShadow)
+def('drawTemporaryShadow',               0x0D50, 'ifffffffiiiiii', '')
+-- (type, x, y, z, width, height, angle, distance, texture, intensity, r, g, b, ms)
+def('drawPermanentShadow',               0x0D51, 'ifffffffiiiiii', '')
+-- (type, x, y, z, dirX, dirY, dirZ, radius, r, g, b, entity)
+def('drawTemporaryLight',                0x0D52, 'ifffffffiiii', '')
+-- (texture, r, g, b, a, entity, x, y, z, size)
+def('drawTemporaryCorona',               0x0D53, 'iiiiiiffff', '')
+-- (texture, r, g, b, a, entity, x, y, z, size, farClip, nearClip, flare, reflection,
+--  checkObstacles, flashWhileFading, fadeSpeed, onlyFromBelow)
+def('drawTemporaryCoronaEx',             0x0D54, 'iiiiiiffffffibbbfb', '')
+-- (fromX, fromY, fromZ, toX, toY, toZ, baseRadius, targetRadius, shadow, intensity, flag1, flag2)
+def('drawSpotlight',                     0x0D5B, 'ffffffffbibb', '')
+def('loadTextureFromBmpFile',            0x0D61, 'ss', 'u', true)     -- (bmp, mask bmp or '')
+def('loadTextureFromPngFile',            0x0D64, 's', 'u', true)
+def('loadTextureFromDdsFile',            0x0D7C, 's', 'u', true)
+def('cleanLoadedTexture',                0x0D7D, 'i', '')
+def('printTemporaryText',                0x0D65, 'sffffi', '')        -- (text, x, y, scaleX, scaleY, font)
+-- (text, x, y, scaleX, scaleY, font, proportional, align, wrap, justify, r, g, b, a,
+--  outline, shadow, dropR, dropG, dropB, dropA, background, backR, backG, backB, backA)
+def('printTemporaryTextEx',              0x0D66, 'sffffibifbiiiiiiiiiibiiii', '')
+-- (texture, x1, y1, x2, y2, r, g, b, a, angle)
+def('draw2dSprite',                      0x0D7E, 'iffffiiiif', '')
+-- (texture, x1, y1, x2, y2, then r, g, b, a for each corner, angle)
+def('draw2dSpriteWithGradient',          0x0D7F, 'iffffiiiiiiiiiiiiiiiif', '')
+
+-- audio streams
+audio('setAudioStreamPositionTime',      0x0D67, 'if', '')            -- seconds
+audio('getAudioStreamPositionTime',      0x0D68, 'i', 'f')
+audio('setAudioStreamEffect',            0x0D69, 'iii', 'u')          -- (stream, BASS_FX type, priority): the effect
+audio('removeAudioStreamEffect',         0x0D6A, 'ii', '')            -- (stream, effect)
+def('setAudioStreamEffectParameters',    0x0D6B, 'ii', '')            -- (effect, pointer to its BASS struct)
+def('getAudioStreamEffectParameters',    0x0D6C, 'ii', '')
+def('resetAudioStreamEffect',            0x0D6D, 'i', '')
+audio('setAudioStreamAttribute',         0x0D6E, 'iif', '')           -- (stream, BASS_ATTRIB, value)
+audio('getAudioStreamAttribute',         0x0D6F, 'ii', 'f')
+-- (stream, mode, min, max, insideAngle, outsideAngle, outsideVolume): -1 leaves one as it is
+audio('set3dAudioStreamAttributes',      0x0D70, 'iiffiif', '')
+audio('get3dAudioStreamAttributes',      0x0D71, 'i', 'iffiif')
+
 def('getComponentParentComponent',       0x0D74, 'i', 'u')
 def('getComponentNumObjects',            0x0D75, 'i', 'i')
 def('getComponentObject',                0x0D76, 'ii', 'u', true)
