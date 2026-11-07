@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.1
+
+**Fixed**
+
+- A texture freed with `cleanLoadedTexture` (0D7D) while a shape or sprite
+  using it was still queued was drawn after it was freed, corrupting memory
+  (a DXVK crash at d3d9.dll+0x13C1F2). The game skips its 2D pass while
+  the menu is up or the screen fades in, so a queue could outlive its
+  frame. 0D7D now drops queued shapes and sprites with that texture, and
+  what was queued for a frame that drew nothing is cleared.
+
 ## 0.11.0
 
 The rest of NewOpcodes: drawing and audio streams, so all 126 of its

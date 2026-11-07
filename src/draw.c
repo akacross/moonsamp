@@ -130,6 +130,7 @@ static Vertex scratch_verts[MAX_VERTS];
 static void *textures[MAX_TEXTURES];
 static struct { char name[32]; int id; } txds[MAX_TXDS];
 static unsigned num_shapes, num_sprites, num_prints, num_spots;
+static int drew_2d, drew_spots;
 static uint32_t corona_id = 10000;
 
 static float fsin(float x) { float r; __asm__("fsin" : "=t"(r) : "0"(x)); return r; }
@@ -160,6 +161,7 @@ static Rgba rgba(Script *s)
 static void draw_frame(void)
 {
     unsigned i, k;
+    drew_2d = 1;
     for (i = 0; i < num_shapes; i++) {
         raster(shapes[i].texture);
         state(RS_VERTEXALPHA, shapes[i].alpha);
@@ -228,6 +230,7 @@ static void draw_spotlights(void)
 {
     static float spare[MAX_SPOTLIGHTS][3][3];
     unsigned i;
+    drew_spots = 1;
     if (!num_spots)
         return;
     PreSearchLightCone();
@@ -274,7 +277,18 @@ static int hooked(int which)
     return (ok & which) != 0;
 }
 
-void draw_tick(void) { corona_id = 10000; }
+/* Once a frame, before the scripts. Idle skips both passes while the menu
+ * is up or the screen fades in: what was queued for a frame that drew
+ * nothing goes, so no queue outlives its textures. */
+void draw_tick(void)
+{
+    if (!drew_2d)
+        num_shapes = num_sprites = num_prints = 0;
+    if (!drew_spots)
+        num_spots = 0;
+    drew_2d = drew_spots = 0;
+    corona_id = 10000;
+}
 
 /* 0D40 draw_2d_shape_type %3d% texture %4d% numVerts %2d% pVerts %1d%
  * vertexAlpha %5d% srcBlend %6d% dstBlend %7d% _unused %8d%: vertices of 1
@@ -597,11 +611,22 @@ static int8_t __stdcall op_0D7C(Script *s)
     return loaded(s, keep_texture(RwD3D9DDSTextureRead(name, NULL), path));
 }
 
-/* 0D7D clean_loaded_texture %1d%: only ours */
+/* 0D7D clean_loaded_texture %1d%: only ours are destroyed, but shapes and
+ * sprites still queued with it go either way, so none binds a freed raster */
 static int8_t __stdcall op_0D7D(Script *s)
 {
     void *t = (void *)(uintptr_t)script_int(s);
-    int i;
+    unsigned i, n;
+    for (i = n = 0; t && i < num_shapes; i++)
+        if (shapes[i].texture != t)
+            shapes[n++] = shapes[i];
+    if (t)
+        num_shapes = n;
+    for (i = n = 0; t && i < num_sprites; i++)
+        if (sprites[i].texture != t)
+            sprites[n++] = sprites[i];
+    if (t)
+        num_sprites = n;
     for (i = 0; t && i < MAX_TEXTURES; i++)
         if (textures[i] == t) {
             RwTextureDestroy(t);

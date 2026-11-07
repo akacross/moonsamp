@@ -28,6 +28,26 @@ static float fo(int k) { float f; memcpy(&f, &out[k], 4); return f; }
 static int32_t ptr(const void *p) { return (int32_t)(uintptr_t)p; }
 static int close_to(float a, float b) { return fabsf(a - b) < 0.001f; }
 
+/* A stand-in RwEngineInstance: render states are recorded, the rest return 1. */
+static void *rasters[1024];
+static int num_rasters;
+static int __cdecl rw_state(int which, void *value)
+{
+    if (which == 1 && value && num_rasters < 1024)
+        rasters[num_rasters++] = value;
+    return 1;
+}
+static int __cdecl rw_any(void) { return 1; }
+static void *engine[64];
+static int bound(void *raster)
+{
+    int i;
+    for (i = 0; i < num_rasters; i++)
+        if (rasters[i] == raster)
+            return 1;
+    return 0;
+}
+
 /* in[] is filled by the caller; types as moonsamp_run takes them. */
 static void op(int code, const char *types, int nout)
 {
@@ -439,6 +459,30 @@ __declspec(dllexport) int run(void)
                 full++;
         }
         check(full == 1, "the shape queue holds 100 a frame");
+        /* a frame drawn through the stand-in engine */
+        {
+            void *freed[1] = { (void *)0xAAAA0000 }, *kept[1] = { (void *)0xBBBB0000 };
+            void (*frame)(void) = (void (*)(void))(void *)(0x53E293 + 5 + *(int32_t *)(0x53E293 + 1));
+            int k;
+            for (k = 0; k < 64; k++)
+                engine[k] = (void *)rw_any;
+            engine[0x20 / 4] = (void *)rw_state;
+            *(void **)0xC97B24 = engine;
+            frame();                                       /* the 100 shapes */
+            in[0] = ptr(freed), in[1] = fi(0), in[2] = fi(0), in[3] = fi(10), in[4] = fi(10);
+            in[5] = in[6] = in[7] = in[8] = 255, in[9] = fi(0);
+            op(0x0D7E, "iffffiiiif", 0);
+            in[0] = ptr(kept);
+            op(0x0D7E, "iffffiiiif", 0);
+            in[0] = ptr(freed);
+            op(0x0D7D, "i", 0);
+            num_rasters = 0;
+            frame();
+            check(!bound(freed[0]) && bound(kept[0]), "0D7D drops queued sprites with that texture before the next draw");
+            num_rasters = 0;
+            frame();
+            check(!bound(kept[0]), "a drawn sprite is not drawn again");
+        }
         in[0] = ptr("tex"), in[1] = fi(1), in[2] = fi(2), in[3] = fi(1), in[4] = fi(1), in[5] = 1;
         op(0x0D65, "sffffi", 0);
         check(1, "0D65 queues a text");
