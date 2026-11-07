@@ -9,6 +9,8 @@
 #define GAME_DIR_MAX MAX_PATH
 
 static char game_dir[GAME_DIR_MAX];
+
+const char *ms_game_dir(void) { return game_dir; }
 static HANDLE log_file = INVALID_HANDLE_VALUE;
 
 /* moonsamp.log never grows past LOG_MAX: a line that would cross it starts
@@ -186,6 +188,7 @@ static void start(HMODULE self)
     if (!script_host_install())
         return;
     newopcodes_install();
+    cleo5_install();
     if (!samp_install())
         return;
     if (!mark_loaded())

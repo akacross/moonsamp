@@ -316,6 +316,77 @@ static FARPROC cleo_proc(HMODULE cleo, const char *decorated, const char *plain)
     return p ? p : GetProcAddress(cleo, plain);
 }
 
+/* Runs an opcode for the Lua libs (moonloader/lib/newopcodes.lua,
+ * cleo5.lua): MoonLoader cannot run an opcode it has no function for.
+ * types has a letter per parameter: i an int, f a float, s a char *
+ * written inline (up to 255 bytes), v a variable the opcode reads and
+ * writes (starting at in[k]), o a variable it writes, e the end of a
+ * variable argument list. nout more variables follow the last one. Each
+ * v, o and trailing variable is copied into out, in that order. Returns the
+ * condition result. */
+__declspec(dllexport) int __cdecl moonsamp_run(int op, const char *types, const int32_t *in, int nout, int32_t *out)
+{
+    uint8_t thread[0x100] __attribute__((aligned(4))), code[2048], *p = code;
+    Script *s = (Script *)thread;
+    OpcodeFn fn = script_handler((uint16_t)op);
+    int i, k, vars = 0;
+    if (!fn || !types || nout < 0 || nout > 32)
+        return 0;
+    memset(thread, 0, sizeof thread);
+    for (k = 0; types[k]; k++) {
+        char t = types[k];
+        size_t n = t == 's' && in[k] ? lstrlenA((const char *)(uintptr_t)in[k]) : 256;
+        if (p - code > (int)sizeof code - 300 || ((t == 'v' || t == 'o') && vars >= 32))
+            return 0;
+        if (t == 'e') {
+            *p++ = 0x00;
+        } else if (t == 'v' || t == 'o') {
+            s->locals[vars] = t == 'v' ? in[k] : 0;
+            *p++ = 0x03;
+            *p++ = (uint8_t)vars++;
+            *p++ = 0;
+        } else if (t == 's' && n < 256) {
+            *p++ = 0x0E;
+            *p++ = (uint8_t)n;
+            memcpy(p, (const void *)(uintptr_t)in[k], n);
+            p += n;
+        } else {
+            *p++ = t == 'f' ? 0x06 : 0x01;
+            memcpy(p, &in[k], 4);
+            p += 4;
+        }
+    }
+    if (vars + nout > 32)
+        return 0;
+    for (i = 0; i < nout; i++) {
+        *p++ = 0x03;
+        *p++ = (uint8_t)(vars + i);
+        *p++ = 0;
+    }
+    memcpy(s->name, "moonsamp", 8);
+    s->base_ip = s->ip = code;
+    s->is_active = 1;
+    fn(s);
+    for (i = 0; i < vars + nout; i++)
+        out[i] = s->locals[i];
+    return s->cond_result != 0;
+}
+
+/* A variable parameter: the address of a local or global variable (types
+ * 0x02 / 0x03), or NULL for anything else (skipped). */
+int32_t *script_var(Script *s)
+{
+    uint8_t type = *s->ip;
+    uint16_t at;
+    if (type == 0x02 || type == 0x03) {
+        memcpy(&at, s->ip + 1, 2);
+        s->ip += 3;
+        return type == 0x03 ? &s->locals[at < 34 ? at : 0] : (int32_t *)((uint8_t *)0xA49960 + at);
+    }
+    script_collect(s, 1);
+    return NULL;
+}
+
 int script_host_install(void)
 {
     HMODULE cleo = load_cleo();

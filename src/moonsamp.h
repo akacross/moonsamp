@@ -33,6 +33,7 @@ typedef int8_t (__stdcall *OpcodeFn)(Script *s);
 
 /* main.c */
 void ms_log(const char *fmt, ...);
+const char *ms_game_dir(void);          /* with a trailing backslash */
 int ms_patch(void *addr, const void *bytes, size_t n);
 
 /* script.c */
@@ -51,6 +52,7 @@ int32_t script_int(Script *s);
 float script_float(Script *s);
 const char *script_string(Script *s, char *buf, size_t size);
 void script_skip_varargs(Script *s);
+int32_t *script_var(Script *s);
 int script_run_label(Script *s, int32_t label);
 void script_label_return(void);
 
@@ -125,6 +127,10 @@ typedef struct {
 
 /* newopcodes.c */
 void newopcodes_install(void);
+
+/* cleo5.c */
+void cleo5_install(void);
+void cleo5_tick(void);
 
 /* samp.c */
 extern uintptr_t samp_base;

@@ -11,7 +11,9 @@
 #   moonsamp.asi           the plugin
 #   moonsamp-LICENSE.txt   GPL-3.0 (renamed so it can't clash with another
 #                          mod's LICENSE in the game folder)
+#   moonloader/lib/moonsamp.lua     moonsamp_run for Lua, which these two use:
 #   moonloader/lib/newopcodes.lua   the NewOpcodes functions for scripts
+#   moonloader/lib/cleo5.lua        CLEO 5's own opcodes for scripts
 #
 # Entry times are the ref's commit time, so rebuilding a tag with the same
 # toolchain gives the same zip.
@@ -36,7 +38,9 @@ ZIP="$ROOT/dist/moonsamp.zip"
 python3 - "$ZIP" "$STAMP" \
     "moonsamp.asi=$WORK/moonsamp.asi" \
     "moonsamp-LICENSE.txt=$WORK/src/LICENSE" \
-    "moonloader/lib/newopcodes.lua=$WORK/src/moonloader/lib/newopcodes.lua" <<'PY'
+    "moonloader/lib/moonsamp.lua=$WORK/src/moonloader/lib/moonsamp.lua" \
+    "moonloader/lib/newopcodes.lua=$WORK/src/moonloader/lib/newopcodes.lua" \
+    "moonloader/lib/cleo5.lua=$WORK/src/moonloader/lib/cleo5.lua" <<'PY'
 import sys, zipfile
 out, stamp, *entries = sys.argv[1:]
 when = tuple(int(x) for x in stamp.split())

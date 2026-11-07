@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # moonsamp.asi against gta_sa.exe's own script engine under Wine, in a
 # throwaway prefix, never the game's: host_test.c (opcode host, commands),
-# newopcodes_test.c (NewOpcodes through moonsamp_run) and
-# raknet_test.c (BitStreams and hooks, with samp.dll mapped but not run). The
-# exe is only read; the copy that runs imports only KERNEL32 and its entry
-# point only loads the test. newopcodes_lua_test.lua checks
-# lib/newopcodes.lua under LuaJIT. Needs wine, python3, luajit and
-# i686-w64-mingw32-gcc.
+# newopcodes_test.c and cleo5_test.c (NewOpcodes and CLEO 5 opcodes through
+# moonsamp_run) and raknet_test.c (BitStreams and hooks, with samp.dll mapped
+# but not run). The exe is only read; the copy that runs imports only
+# KERNEL32 and its entry point only loads the test. newopcodes_lua_test.lua
+# and cleo5_lua_test.lua check lib/newopcodes.lua and lib/cleo5.lua under
+# LuaJIT. Needs wine, python3, luajit and i686-w64-mingw32-gcc.
 #
 #   test/run.sh [path/to/gta_sa.exe] [samp.dll...]
 #
@@ -27,7 +27,7 @@ shift || true
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 export WINEPREFIX="$work/prefix" WINEDEBUG=-all
 OUT="$work/moonsamp.asi" "$root/build.sh" >/dev/null
-for t in host_test newopcodes_test cleo_test raknet_test phase2_test overlay_test; do
+for t in host_test newopcodes_test cleo5_test cleo_test raknet_test phase2_test overlay_test; do
     i686-w64-mingw32-gcc -O2 -Wall -shared -static -o "$work/$t.dll" "$here/$t.c"
 done
 i686-w64-mingw32-gcc -O2 -Wall -shared -o "$work/MoonLoader.asi" "$here/fake_moonloader.c"
@@ -89,6 +89,7 @@ run() {
 failed=()
 run host_test
 run newopcodes_test
+run cleo5_test
 # cleo_test once per CLEO.asi in CLEO, in a folder of its own with the
 # bass.dll and the .cleo plugins found beside it
 k=0
@@ -122,5 +123,7 @@ for dll in "$@"; do
 done
 echo "=== newopcodes_lua_test"
 luajit "$here/newopcodes_lua_test.lua" || { status=1; failed+=(newopcodes_lua_test); }
+echo "=== cleo5_lua_test"
+luajit "$here/cleo5_lua_test.lua" || { status=1; failed+=(cleo5_lua_test); }
 [ ${#failed[@]} -eq 0 ] && echo "all passed" || printf 'FAILED: %s\n' "${failed[@]}"
 exit $status

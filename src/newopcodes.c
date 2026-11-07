@@ -3,7 +3,7 @@
  * The drawing and CLEO audio stream opcodes are not here yet.
  *
  * MoonLoader cannot run an opcode it has no function for, so
- * moonloader/lib/newopcodes.lua runs these through moonsamp_run. As in
+ * moonloader/lib/newopcodes.lua runs these through moonsamp_run (script.c). As in
  * NewOpcodes, a matrix, quat or vector argument of 1 to 10 names one of ten
  * scratch ones, and a colpoint of 1 the scratch colpoint. */
 #include "moonsamp.h"
@@ -1127,53 +1127,6 @@ static int8_t store_pair(Script *s, int a, int b)
 }
 static int8_t __stdcall op_0D72(Script *s) { return store_pair(s, MENU_MANAGER[0x4F], MENU_MANAGER[0x50]); }
 static int8_t __stdcall op_0D73(Script *s) { return store_pair(s, AT(RS_GLOBAL, 4, int32_t), AT(RS_GLOBAL, 8, int32_t)); }
-
-/* ---- the runner -------------------------------------------------------------- */
-
-/* Runs an opcode for lib/newopcodes.lua: types holds a letter per input,
- * i an int, f a float, s a char * written inline (up to 255 bytes); nout
- * local variables follow them, and are copied into out. Returns the
- * condition result. */
-__declspec(dllexport) int __cdecl moonsamp_run(int op, const char *types, const int32_t *in, int nout, int32_t *out)
-{
-    uint8_t thread[0x100] __attribute__((aligned(4))), code[2048], *p = code;
-    Script *s = (Script *)thread;
-    OpcodeFn fn = script_handler((uint16_t)op);
-    int i, k;
-    if (!fn || !types || nout < 0 || nout > 32)
-        return 0;
-    for (k = 0; types[k]; k++) {
-        size_t n = types[k] == 's' && in[k] ? slen((const char *)(uintptr_t)in[k]) : 256;
-        if (p - code > (int)sizeof code - 300)
-            return 0;
-        if (types[k] == 'f') {
-            *p++ = 0x06;
-        } else if (types[k] == 's' && n < 256) {
-            *p++ = 0x0E;
-            *p++ = (uint8_t)n;
-            memcpy(p, (const void *)(uintptr_t)in[k], n);
-            p += n;
-            continue;
-        } else {
-            *p++ = 0x01;
-        }
-        memcpy(p, &in[k], 4);
-        p += 4;
-    }
-    for (i = 0; i < nout; i++) {
-        *p++ = 0x03;
-        *p++ = (uint8_t)i;
-        *p++ = 0;
-    }
-    memset(thread, 0, sizeof thread);
-    memcpy(s->name, "moonsamp", 8);
-    s->base_ip = s->ip = code;
-    s->is_active = 1;
-    fn(s);
-    for (i = 0; i < nout; i++)
-        out[i] = s->locals[i];
-    return s->cond_result != 0;
-}
 
 void newopcodes_install(void)
 {

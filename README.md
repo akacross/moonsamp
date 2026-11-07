@@ -139,6 +139,44 @@ under moonsamp; every value both can give matches.
 Any other opcode returns false and leaves `""` / 0 in its results, and is
 named once in `moonsamp.log`.
 
+## CLEO 5's opcodes
+
+moonsamp also has CLEO 5's own opcodes (0DD5, 2000-2801; after CLEO 5's
+source, MIT), for MoonLoader scripts with or without CLEO: input (keys just
+pressed, keys in a range, key emulation, controller keys, key names), debug
+output (trace, breakpoint, log to file: to the console and moonsamp.log),
+files (0A9A-0A9C to open them, positions, blocks, CLEO's virtual paths,
+write times), memory (copy, offset reads and writes, compare, the game's
+script list), audio streams, text (tests, FXT files, formatted labels, text
+on screen), math (bits, random picks) and INI deletes.
+`moonloader/lib/cleo5.lua` has one function per opcode, named after it:
+
+```lua
+local cleo5 = require 'cleo5'
+if cleo5.isKeyJustPressed(0x71) then cleo5.trace('F2 pressed') end
+local stream = loadAudioStream('moonloader\\resource\\audio\\hit.mp3')
+cleo5.setAudioStreamSpeed(stream, 1.5)
+```
+
+- Audio streams are BASS channels; the lib takes MoonLoader's AudioStream
+  handles to theirs (the object behind the handle has the channel at +8).
+- Paths: `root:`, `user:`, `cleo:`, `modules:`, and `.` for the moonloader
+  folder; anything else relative is the game folder's.
+- Without CLEO, text labels and FXT entries are served by a hook on
+  CText::Get, installed with the first one (over SA-MP's jump if it is
+  there). With CLEO they go to CLEO's own labels (0ADF / 0AE0): CLEO 5's
+  hook puts the original bytes back for each call it does not answer, which
+  would take away a hook over its own.
+- With CLEO none of these is registered with it (CLEO 5 has its own, and
+  its scripts expect those); `moonsamp_run` uses moonsamp's.
+- 2000-2003 belong to CLEO's script functions, which MoonLoader scripts do
+  not have: no arguments, and only the condition is returned. A breakpoint
+  is logged; the game is not paused, since nothing would resume it.
+
+`moonloader/lib/moonsamp.lua` is the runner both libs use: letters for each
+parameter (`i f s` values, `v` a variable read and written, `o` one only
+written, `e` the end of a variable argument list).
+
 ## NewOpcodes
 
 moonsamp also has 95 of the 128 opcodes of DK22Pac's NewOpcodes CLEO plugin

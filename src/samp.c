@@ -406,6 +406,7 @@ static void trace_input(void)
 void samp_tick(void)
 {
     threads_tick();
+    cleo5_tick();
     if (!build())
         return;
     overlay_tick();

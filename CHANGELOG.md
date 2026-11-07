@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.10.0
+
+CLEO 5's own opcodes for MoonLoader scripts, with or without CLEO. The
+in-game check passes 28 of 28 with no CLEO and beside CLEO 5.5.0.
+
+**Added**
+
+- 66 of CLEO 5's opcodes (0DD5, 2000-2801): input (keys just pressed, keys
+  in a range, key emulation, controller keys, key names), debug output
+  (trace, breakpoint, log to file), files (0A9A-0A9C, positions, blocks,
+  CLEO's virtual paths, write times), memory (copy, offset reads and
+  writes, compare, the game's script list), audio streams, text (tests,
+  FXT files, formatted labels, text on screen), math (bits, random picks)
+  and INI deletes.
+- `moonloader/lib/cleo5.lua`, in the zip: a function per opcode, named
+  after it (`isKeyJustPressed`, `trace`, `setAudioStreamSpeed`, ...). It
+  takes MoonLoader's AudioStream handles for the audio opcodes.
+- `moonloader/lib/moonsamp.lua`, in the zip: the `moonsamp_run` runner both
+  libs use.
+
+**Changed**
+
+- With CLEO none of these is registered with it, so CLEO 5 keeps its own;
+  text labels and FXT entries then go to CLEO's labels. Without CLEO
+  moonsamp hooks CText::Get for them, with the first one.
+- `newopcodes.lua` is built on `moonsamp.lua`.
+
 ## 0.9.0
 
 MoonLoader scripts beside CLEO 5, which SAMPFUNCS does not run with, and

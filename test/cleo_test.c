@@ -41,6 +41,17 @@ static void call_on(uint8_t *sc, uint8_t *at, int op)
     (*(Handler **)0x469FEE)[op / 100](sc, op);
 }
 
+static const char *log_now(void)
+{
+    static char text[16384];
+    FILE *f = fopen("moonsamp.log", "rb");
+    size_t n = f ? fread(text, 1, sizeof text - 1, f) : 0;
+    if (f)
+        fclose(f);
+    text[n] = 0;
+    return text;
+}
+
 static void *got_obj;
 static const char *got_params;
 static uint8_t cmd_script[0x100], cmd_code[64];
@@ -100,6 +111,20 @@ __declspec(dllexport) int run(void)
     {
         int32_t in[1] = { (int32_t)(uintptr_t)"moonsamp" }, out[1] = { 0 };
         check(run_op && run_op(0x0D4C, "s", in, 1, out) == 0 && out[0] == 8, "moonsamp_run has the NewOpcodes");
+        out[0] = 0;
+        check(run_op && run_op(0x2608, "s", in, 1, out) == 0 && out[0] == 8, "and moonsamp's CLEO 5 opcodes");
+    }
+    {
+        int32_t in[4] = { (int32_t)(uintptr_t)"MSCLEO", (int32_t)(uintptr_t)"%s %d", (int32_t)(uintptr_t)"label", 7 };
+        typedef const char *(__attribute__((thiscall)) *TextGetFn)(void *, const char *);
+        run_op(0x2609, "sssie", in, 0, NULL);
+        check(strstr(log_now(), "CText::Get hooked") == NULL, "with CLEO moonsamp leaves CText::Get alone");
+        /* CLEO 5 hooks CText::Get after its first frame, which never comes here */
+        if (*(uint8_t *)0x6A0050 == 0xE9)
+            check(!strcmp(((TextGetFn)0x6A0050)((void *)0xC1B340, "MSCLEO"), "label 7"),
+                  "a label goes to CLEO's own (0ADF), served by its hook");
+        else
+            printf("skip CText::Get is not hooked yet: the label lookup is left to the game\n");
     }
 
     /* MoonLoader's command script: the stub at base + 32 (as in host_test) */
