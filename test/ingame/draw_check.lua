@@ -2,11 +2,11 @@
     NewOpcodes drawing and audio stream check: what the Wine tests cannot
     run, through moonloader/lib/newopcodes.lua.
 
-    Copy into moonloader/, play, and once you are spawned it draws for 10
-    seconds: a red-to-blue square at the top left, the samp cursor and a car
-    light texture as sprites (one turning), "moonsamp draw check" in white,
-    a corona and a light above you, a shadow under you and a spotlight
-    shining down in front of you. Then it writes
+    Copy into moonloader/tests/ and run it from the /sh menu: once you are
+    spawned it draws for 10 seconds: a red-to-blue square at the top left,
+    the samp cursor and a car light texture as sprites (one turning),
+    "moonsamp draw check" in white, a corona and a light above you, a shadow
+    under you and a spotlight shining down in front of you. Then it writes
     moonloader/logs/draw_check.log and unloads.
 ]]
 script_name('draw_check')

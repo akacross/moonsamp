@@ -2,8 +2,8 @@
     NewOpcodes check: what the Wine tests cannot run (RenderWare math, bones,
     car components, line of sight), through moonloader/lib/newopcodes.lua.
 
-    Copy into moonloader/, play, and once you are spawned it writes
-    moonloader/logs/newopcodes_check.log and unloads. Get in a car first to
+    Copy into moonloader/tests/ and run it from the /sh menu: once you are
+    spawned it writes moonloader/logs/newopcodes_check.log and unloads. Get in a car first to
     check the component opcodes too. It changes nothing but the scratch
     matrices, quats and colpoint, and sets the ped's and car's alpha to 255.
 ]]

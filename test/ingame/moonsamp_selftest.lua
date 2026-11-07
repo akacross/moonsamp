@@ -1,7 +1,7 @@
 --[[
     moonsamp self-test: MoonLoader's SA-MP functions, read-only.
 
-    Copy into moonloader/, play, and it writes
+    Copy into moonloader/tests/ and run it from the /sh menu; it writes
     moonloader/logs/moonsamp_selftest-<provider>.log once you are spawned
     (provider: "sampfuncs" or "moonsamp"). Run it once with SAMPFUNCS and once
     with moonsamp, then compare the two logs (test/ingame/compare.py).

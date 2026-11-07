@@ -2,9 +2,9 @@
     CLEO 5 opcodes check: what the Wine tests cannot run (the game's text,
     keys, MoonLoader's audio streams), through moonloader/lib/cleo5.lua.
 
-    Copy into moonloader/, play, and once you are spawned it shows "cleo5
-    check" on screen for 5 seconds, writes moonloader/logs/cleo5_check.log
-    and unloads. It plays a hit sound muted, writes and deletes a few files
+    Copy into moonloader/tests/ and run it from the /sh menu: once you are
+    spawned it shows "cleo5 check" on screen for 5 seconds, writes
+    moonloader/logs/cleo5_check.log and unloads. It plays a hit sound muted, writes and deletes a few files
     in moonloader/logs, and adds two text labels.
 ]]
 script_name('cleo5_check')
