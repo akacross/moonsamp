@@ -90,7 +90,7 @@ def('writeMemoryWithOffset',             0x2402, 'iiii', '')           -- (addre
 def('forgetMemory',                      0x2403, 'i', '')
 def('getScriptStructJustCreated',        0x2404, '', 'u')
 def('isScriptRunning',                   0x2405, 'i', '', true)
-def('getScriptStructFromFilename',       0x2406, 's', 'u', true)
+def('getScriptStructFromFilename',       0x2406, 's', 'u', true)      -- (filename): only CLEO's scripts: false
 def('isMemoryEqual',                     0x2407, 'iii', '', true)
 def('terminateScript',                   0x2408, 'i', '')
 
@@ -110,7 +110,7 @@ audio('getAudioStreamProgressSeconds',   0x250B, 'i', 'f')
 audio('setAudioStreamProgressSeconds',   0x250C, 'if', '')
 
 -- text
-def('isTextEmpty',                       0x2600, 's', '', true)
+def('isTextEmpty',                       0x2600, 's', '', true)       -- (text)
 def('isTextEqual',                       0x2601, 'ssb', '', true)      -- (a, b, ignoreCase)
 def('isTextInText',                      0x2602, 'ssb', '', true)
 def('isTextPrefix',                      0x2603, 'ssb', '', true)
@@ -128,8 +128,8 @@ end
 -- math
 def('isBitSet',                          0x2700, 'ii', '', true)
 def('setBit',                            0x2701, 'vi', 'i')            -- (value, bit): the new value
-def('clearBit',                          0x2702, 'vi', 'i')
-def('toggleBit',                         0x2703, 'vib', 'i')           -- (value, bit, state)
+def('clearBit',                          0x2702, 'vi', 'i')           -- (value, bit): the new value
+def('toggleBit',                         0x2703, 'vib', 'i')           -- (value, bit, state): the new value
 function M.isTruthy(v)
     return call(0x2704, type(v) == 'string' and 's' or 'i', '', true, v)
 end

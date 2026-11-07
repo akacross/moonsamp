@@ -172,19 +172,20 @@ def('draw2dSprite',                      0x0D7E, 'iffffiiiif', '')
 def('draw2dSpriteWithGradient',          0x0D7F, 'iffffiiiiiiiiiiiiiiiif', '')
 
 -- audio streams
-audio('setAudioStreamPositionTime',      0x0D67, 'if', '')            -- seconds
-audio('getAudioStreamPositionTime',      0x0D68, 'i', 'f')
+audio('setAudioStreamPositionTime',      0x0D67, 'if', '')            -- (stream, seconds)
+audio('getAudioStreamPositionTime',      0x0D68, 'i', 'f')            -- (stream): seconds
 audio('setAudioStreamEffect',            0x0D69, 'iii', 'u')          -- (stream, BASS_FX type, priority): the effect
 audio('removeAudioStreamEffect',         0x0D6A, 'ii', '')            -- (stream, effect)
 def('setAudioStreamEffectParameters',    0x0D6B, 'ii', '')            -- (effect, pointer to its BASS struct)
-def('getAudioStreamEffectParameters',    0x0D6C, 'ii', '')
-def('resetAudioStreamEffect',            0x0D6D, 'i', '')
+def('getAudioStreamEffectParameters',    0x0D6C, 'ii', '')            -- (effect, pointer to fill)
+def('resetAudioStreamEffect',            0x0D6D, 'i', '')             -- (effect)
 audio('setAudioStreamAttribute',         0x0D6E, 'iif', '')           -- (stream, BASS_ATTRIB, value)
-audio('getAudioStreamAttribute',         0x0D6F, 'ii', 'f')
+audio('getAudioStreamAttribute',         0x0D6F, 'ii', 'f')           -- (stream, BASS_ATTRIB): value
 -- (stream, mode, min, max, insideAngle, outsideAngle, outsideVolume): -1 leaves one as it is
 audio('set3dAudioStreamAttributes',      0x0D70, 'iiffiif', '')
-audio('get3dAudioStreamAttributes',      0x0D71, 'i', 'iffiif')
+audio('get3dAudioStreamAttributes',      0x0D71, 'i', 'iffiif')       -- (stream): mode, min, max, insideAngle, outsideAngle, outsideVolume
 
+-- components, atomics, volume and screen size
 def('getComponentParentComponent',       0x0D74, 'i', 'u')
 def('getComponentNumObjects',            0x0D75, 'i', 'i')
 def('getComponentObject',                0x0D76, 'ii', 'u', true)
@@ -194,11 +195,12 @@ def('setObjectAtomicFlag',               0x0D79, 'iib', '')
 def('getObjectAtomicNumMaterials',       0x0D7A, 'i', 'i', true)
 def('getObjectAtomicMaterialTexture',    0x0D7B, 'ii', 'u', true)
 
--- (asFloat): sfx and radio volume, or screen width and height
+-- (asFloat): sfx volume, radio volume
 function M.getGameVolume(asFloat)
     return call(0x0D72, 'b', asFloat and 'ff' or 'ii', false, asFloat)
 end
 
+-- (asFloat): width, height
 function M.getScreenWidthAndHeight(asFloat)
     return call(0x0D73, 'b', asFloat and 'ff' or 'ii', false, asFloat)
 end

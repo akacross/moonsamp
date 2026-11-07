@@ -8,44 +8,90 @@ through CLEO when `CLEO.asi` is installed: CLEO 4 or CLEO 5, in the game
 folder, `scripts\` or `plugins\`. SAMPFUNCS does not run beside CLEO 5;
 with moonsamp, MoonLoader scripts and CLEO 5 scripts run together.
 
-## How MoonLoader talks to SAMPFUNCS
+What it has:
 
-MoonLoader.asi does not link SAMPFUNCS. Every `samp*` / `raknet*` function is
-a SAMPFUNCS opcode (0AF8-0C9x) that SAMPFUNCS registers with
-`CLEO_RegisterOpcode`:
+- **Every SA-MP function MoonLoader has** (`samp*`, `raknet*`, `sampfuncs*`,
+  the dxut dialogs): every opcode MoonLoader emits, on 0.3.7-R1 to R5 and
+  0.3.DL. See [SA-MP functions](#sa-mp-functions).
+- **A console** like SAMPFUNCS's, on `~`, showing moonloader.log and
+  sampfuncsLog. See [Console and dialogs](#console-and-dialogs).
+- **CLEO 5's own opcodes** for MoonLoader scripts, with or without CLEO:
+  keys, debug output, files, memory, audio streams, text, bits, INI.
+  `moonloader/lib/cleo5.lua`, every function in [docs/cleo5.md](docs/cleo5.md).
+- **All of NewOpcodes** (DK22Pac's plugin): matrices, bones, components,
+  collisions, strings, game state, drawing and audio streams.
+  `moonloader/lib/newopcodes.lua`, every function in
+  [docs/newopcodes.md](docs/newopcodes.md).
 
-- MoonLoader writes the parameters in SCM format into a buffer (strings up to
-  127 bytes as type 0x0E, longer ones as a `char*` in a type 0x01 int; results
-  go to local var 0..n), points a CRunningScript at it and calls
-  `CommandHandlerTable[op / 100](script, op)`. It reads the table address once
-  at startup ("Initializing opcode handler table") from the operand at
-  0x469FEE. ProcessOneCommand has its own copy at 0x469EF0; both are patched.
-- `isSampfuncsLoaded()` is true when the byte at 0x561931 is `E9`;
-  `isCleoLoaded()` checks 0x4667DB the same way. MoonLoader registers the
-  samp* functions only when both are true at startup, so moonsamp sets both
-  (each a jmp to a trampoline that runs the moved instruction).
-- Callbacks (chat commands, RakNet hooks) are labels in a hidden MoonLoader
-  script whose code is `0AA5 call <MoonLoader fn>` then a return opcode
-  (`0B43` for commands, `0BE0` for hooks). SAMPFUNCS runs that code on the
-  spot; so does moonsamp.
+## Install
 
-With CLEO:
+Extract `moonsamp.zip` from the
+[latest release](https://gitlab.com/akacross/moonsamp/-/releases) into the
+GTA San Andreas folder, next to `gta_sa.exe`:
 
-- A callback stub's opcodes run on moonsamp's own handlers (0AA5 and the
-  return), not through CLEO: MoonLoader runs opcodes on the stub's script
-  while 0AA5 calls it, and CLEO 5 refuses an opcode on a script still inside
-  one (silently, for a script it did not start). Anything else in a stub
-  goes through the table at 0x469FEE: CLEO 4 replaces only that one, so
-  ProcessOneCommand's copy at 0x469EF0 still has the game's 27 slots.
-- CLEO 4 hooks 0x4667DB and so sets MoonLoader's CLEO marker; CLEO 5 does
-  not, so moonsamp sets it whenever the byte is not already `E9`.
-- CLEO 5 marks a script inside an opcode (bit 1 at +0xDF) and suspends one
-  that starts another before the first ends. A hook can fire while its
-  script is inside an opcode, so moonsamp clears the bit for the stub and
-  puts it back after. Under CLEO 4 any bit of +0xDF means "a CLEO script",
-  so it is left alone there.
+| File | |
+| --- | --- |
+| `moonsamp.asi` | the SA-MP API, the console and the opcodes |
+| `moonsamp-LICENSE.txt` | GPL-3.0 |
+| `moonloader/lib/moonsamp.lua` | the opcode runner the other two use |
+| `moonloader/lib/newopcodes.lua` | NewOpcodes for scripts |
+| `moonloader/lib/cleo5.lua` | CLEO 5's opcodes for scripts |
 
-## Supported
+Rename `SAMPFUNCS.asi` to `SAMPFUNCS.asi.off`: moonsamp stays off while it
+is there. CLEO is optional. Updating is the same: extract over the old
+files. `moonsamp.log` in the game folder names the version, the SA-MP
+build and the CLEO it found.
+
+## Using the libs
+
+MoonLoader cannot run an opcode it has no function for, so the CLEO 5 and
+NewOpcodes opcodes come with a function each, named after the opcode
+(`GET_CHAR_BONE_MATRIX` -> `getCharBoneMatrix`). Functions with a condition
+return it first, then their outputs, as MoonLoader's own do:
+
+```lua
+local no = require 'newopcodes'
+local cleo5 = require 'cleo5'
+
+local ok, head = no.getCharBoneMatrix(PLAYER_PED, 8)
+if ok then print(no.getMatrixPosition(head)) end
+
+if cleo5.isKeyJustPressed(0x71) then cleo5.trace('F2 at %.1f', os.clock()) end
+
+local ok, tex = no.loadTextureFromPngFile('mouse.png')
+while true do                          -- drawing lasts one frame
+    if ok then no.draw2dSprite(tex, 100, 100, 140, 140, 255, 255, 255, 255, 0) end
+    no.printTemporaryText('hello', 40, 300, 0.6, 1.4, 1)
+    wait(0)
+end
+```
+
+- Handles are script handles; pointers are numbers.
+- Audio stream functions in both libs take MoonLoader's AudioStream handles
+  (or a BASS channel number): the object behind the handle has the channel
+  at +8. `cleo5.audioStreamChannel(stream)` gives it.
+- Formatted CLEO 5 functions (`trace`, `logToFile`, `displayTextFormatted`,
+  ...) format in Lua with `string.format`.
+- `M.available` is false when moonsamp.asi (or its `moonsamp_run` export)
+  is not loaded; calls then raise an error.
+
+`moonloader/lib/moonsamp.lua` is the runner both use, built on the
+`moonsamp_run` export:
+
+    int moonsamp_run(int op, const char *types, const int32_t *in, int nout, int32_t *out);
+
+It writes the inputs in SCM format, one letter of `types` each (`i` an int,
+`f` a float, `s` a string inline, or a `char *` past 255 bytes; `v` a local
+variable read and written, `o` one only written, `e` the end of a variable
+argument list), adds `nout` local variables for the outputs, calls
+moonsamp's handler on a scratch script and copies the values out: the `v`
+and `o` variables first, then the outputs. It returns the condition.
+`require('moonsamp').call(op, inputs, outputs, cond, ...)` takes the same
+letters plus `b` (a boolean) and `x` (a string or a number), and decodes
+the outputs (`i u f b s`: int, unsigned, float, boolean, the text a
+`char *` points at).
+
+## SA-MP functions
 
 GTA:SA 1.0 US. samp.dll 0.3.7-R1, R2, R3, R3-1, R4, R5 and 0.3.DL-R1; each
 build's addresses and offsets are in `src/builds.h`.
@@ -107,26 +153,14 @@ build's addresses and offsets are in `src/builds.h`.
 | 0AA5 | call_function (CLEO; used by the callback stubs) |
 | 0B80-0B89, 0B90-0BAB | the dxut* script dialogs: buttons, checkboxes, edit boxes, statics, sliders, list boxes, DXUT's events |
 
-Every opcode MoonLoader emits is covered.
-
-The console opens with `~` (Esc or `~` closes it) over the top left of the
-screen. It shows moonloader.log as MoonLoader writes it, so it needs no
-script, and what scripts send with sampfuncsLog; scriptHelper's copies of
-moonloader.log (`[ML] ...`) are left out, so nothing shows twice. MoonLoader's
-debug lines are hidden until `debug`. Typed lines run console commands;
-`help` lists them, `clear` empties it. Up / Down recall typed lines, Tab
-completes a command name, PgUp / PgDn and the wheel scroll. While open it
-shows SA-MP's cursor, which holds the camera and controls.
-
-Script dialogs and the console are drawn on SA-MP's real Direct3D device
-(`device` in `src/builds.h`), in its Present: after SA-MP's own UI. A dialog
-takes the mouse only while SA-MP's cursor is shown, and the keyboard while
-one of its edit boxes or list boxes has focus.
+Every opcode MoonLoader emits is covered. Any other opcode returns false and
+leaves `""` / 0 in its results, and is named once in `moonsamp.log`.
 
 RakNet hooks: RakClientInterface vtable slots Send (6), Receive (8),
 DeallocatePacket (9) and RPC (25), and the call to RakPeer::HandleRPCPacket
-inside RakClient::Receive (`handle_rpc_call` in `src/builds.h`). Hook handlers get a copy of the stream: samp.dll
-frees its own BitStreams with its own CRT.
+inside RakClient::Receive (`handle_rpc_call` in `src/builds.h`). Hook
+handlers get a copy of the stream: samp.dll frees its own BitStreams with
+its own CRT.
 
 A dialog a script shows is client-side: moonsamp shows it with
 `m_bServerside = 2`, which SA-MP still treats as true, and the outgoing RPC
@@ -136,92 +170,142 @@ The in-game self-test (`test/ingame/moonsamp_selftest.lua`, compared with
 `test/ingame/compare.py`) runs the read-only functions under SAMPFUNCS and
 under moonsamp; every value both can give matches.
 
-Any other opcode returns false and leaves `""` / 0 in its results, and is
-named once in `moonsamp.log`.
+## Console and dialogs
+
+The console opens with `~` (Esc or `~` closes it) over the top left of the
+screen. It shows moonloader.log as MoonLoader writes it, so it needs no
+script, and what scripts send with sampfuncsLog; scriptHelper's copies of
+moonloader.log (`[ML] ...`) are left out, so nothing shows twice. MoonLoader's
+debug lines are hidden until `debug`. Typed lines run console commands;
+`help` lists them, `clear` empties it. Up / Down recall typed lines, Tab
+completes a command name, PgUp / PgDn and the wheel scroll. While open it
+shows SA-MP's cursor, which holds the camera and controls, and keys held
+when it opens are released, so a car rolls on instead of keeping its
+throttle.
+
+Script dialogs and the console are drawn on SA-MP's real Direct3D device
+(`device` in `src/builds.h`), in its Present: after SA-MP's own UI. A dialog
+takes the mouse only while SA-MP's cursor is shown, and the keyboard while
+one of its edit boxes or list boxes has focus.
 
 ## CLEO 5's opcodes
 
-moonsamp also has CLEO 5's own opcodes (0DD5, 2000-2801; after CLEO 5's
-source, MIT), for MoonLoader scripts with or without CLEO: input (keys just
-pressed, keys in a range, key emulation, controller keys, key names), debug
-output (trace, breakpoint, log to file: to the console and moonsamp.log),
-files (0A9A-0A9C to open them, positions, blocks, CLEO's virtual paths,
-write times), memory (copy, offset reads and writes, compare, the game's
-script list), audio streams, text (tests, FXT files, formatted labels, text
-on screen), math (bits, random picks) and INI deletes.
-`moonloader/lib/cleo5.lua` has one function per opcode, named after it:
+moonsamp has CLEO 5's own opcodes (0DD5, 2000-2801; after CLEO 5's source,
+MIT), for MoonLoader scripts with or without CLEO. Every function is in
+[docs/cleo5.md](docs/cleo5.md):
 
-```lua
-local cleo5 = require 'cleo5'
-if cleo5.isKeyJustPressed(0x71) then cleo5.trace('F2 pressed') end
-local stream = loadAudioStream('moonloader\\resource\\audio\\hit.mp3')
-cleo5.setAudioStreamSpeed(stream, 1.5)
-```
+- Input: keys just pressed, keys pressed in a range, key press and release
+  emulation, the key bound to a game control, key names from the game's
+  text. Key states are read once a frame while the game has the focus.
+- Debug: trace, breakpoint and log to file. Trace and breakpoint go to the
+  console and moonsamp.log; a breakpoint does not pause the game, since
+  nothing would resume it.
+- Files: open, close and size (CLEO's 0A9A-0A9C), positions, block reads
+  and writes, write times. Paths take CLEO's `root:`, `user:`, `cleo:` and
+  `modules:`; `.` is the moonloader folder, and anything else relative is
+  the game folder's.
+- Memory: copy, reads and writes at an offset, compare, the game's script
+  list.
+- Audio streams: speed, volume and speed transitions, progress, duration,
+  type, source size (BASS channels).
+- Text: tests, FXT files, formatted text labels, text on screen.
+- Math and INI: bits, random picks, deleting INI sections and keys.
 
-- Audio streams are BASS channels; the lib takes MoonLoader's AudioStream
-  handles to theirs (the object behind the handle has the channel at +8).
-- Paths: `root:`, `user:`, `cleo:`, `modules:`, and `.` for the moonloader
-  folder; anything else relative is the game folder's.
-- Without CLEO, text labels and FXT entries are served by a hook on
-  CText::Get, installed with the first one (over SA-MP's jump if it is
-  there). With CLEO they go to CLEO's own labels (0ADF / 0AE0): CLEO 5's
-  hook puts the original bytes back for each call it does not answer, which
-  would take away a hook over its own.
-- With CLEO none of these is registered with it (CLEO 5 has its own, and
-  its scripts expect those); `moonsamp_run` uses moonsamp's.
-- 2000-2003 belong to CLEO's script functions, which MoonLoader scripts do
-  not have: no arguments, and only the condition is returned. A breakpoint
-  is logged; the game is not paused, since nothing would resume it.
-
-`moonloader/lib/moonsamp.lua` is the runner both libs use: letters for each
-parameter (`i f s` values, `v` a variable read and written, `o` one only
-written, `e` the end of a variable argument list).
+With CLEO none of these is registered with it (CLEO 5 has its own, and its
+scripts expect those); the libs still run moonsamp's. Without CLEO, text
+labels and FXT entries are served by a hook on CText::Get, installed with
+the first one (over SA-MP's jump if it is there). With CLEO they go to
+CLEO's own labels (0ADF / 0AE0): CLEO 5's hook puts the original bytes back
+for each call it does not answer, which would take away a hook over its
+own. 2000-2003 belong to CLEO's script functions, which MoonLoader scripts
+do not have: no arguments, and only the condition is returned.
 
 ## NewOpcodes
 
-moonsamp also has all 126 opcodes of DK22Pac's NewOpcodes CLEO plugin
-(0D00-0D7F, written anew from what they do): matrices, quaternions, vectors,
-ped bones, car components and atomics, model alpha, collided entities, line
-of sight and colpoints, strings, memory and struct fields, the sun, weather,
-traffic lights, car lights, vehicle dummies, projectiles, volumes, the
-screen size, drawing and audio streams.
+moonsamp has all 126 opcodes of DK22Pac's NewOpcodes CLEO plugin (0D00-0D7F,
+written anew from what they do). Every function is in
+[docs/newopcodes.md](docs/newopcodes.md):
 
-- Drawing (src/draw.c): shapes, sprites and texts are queued and drawn
-  once a frame from Render2dStuff's empty call at 0x53E293 (plugin-sdk's
-  drawing event), under the HUD; spotlights from the effects pass
-  (0x53E1E0). Both hooks keep every register and go on to whatever call was
-  there, and go in with the first queued item. Coronas, shadows and lights
-  go straight to the game's lists. Textures load from TXD, PNG, BMP or DDS
-  files and stay until 0D7D.
-- Where NewOpcodes does not do what its opcodes say, moonsamp does: it
-  never installs its spotlight hook, gives permanent shadows a 1 ms life
-  (its arguments are out of order), turns a shadow's second axis by 90
-  radians, and 0D41 writes to the scratch vertices whatever pointer it is
-  given.
-- Audio streams (0D67-0D71) are empty stubs in NewOpcodes; here they work
-  on the BASS channel: position in seconds, BASS_FX_DX8_* effects and their
-  parameters, BASS_ATTRIB_* attributes and the 3D attributes.
+- Matrices, quaternions and vectors; ped bones; car components, atomics and
+  materials; model alpha; collided entities; line of sight and colpoints;
+  strings, memory and struct fields; the sun, weather, traffic lights, car
+  lights, vehicle dummies, projectiles, volumes and the screen size.
+- Drawing: 2D shapes and their vertices, sprites (plain, gradient, turned),
+  texts in the game's fonts, temporary coronas, lights, temporary and
+  permanent shadows, spotlights, and textures from TXD, PNG, BMP or DDS
+  files.
+- Audio streams (0D67-0D71): position in seconds, BASS_FX_DX8_* effects and
+  their parameters, BASS_ATTRIB_* attributes and the 3D attributes.
 
-MoonLoader cannot run an opcode it has no function for, so
-`moonloader/lib/newopcodes.lua` (in the release zip) has one per opcode,
-named after it, and runs it through moonsamp's `moonsamp_run` export:
+As in NewOpcodes, a matrix, quat or vector of 1 to 10 is one of ten scratch
+ones and colpoint 1 the scratch colpoint; a NULL one reads as zeroes.
+Shape vertices of 1 are 20 scratch ones, else a pointer to 28-byte
+vertices (x, y, z, rhw, ARGB colour, u, v). Sprite corners are in the
+640x448 screen; text and shape positions are pixels. Textures are pointers
+from `loadTextureFrom*File` or `findTextureInTxd*` (0 draws without one), and
+entities for lights and coronas are pointers (`getCharPointer` and so on).
 
-```lua
-local no = require 'newopcodes'
-local ok, head = no.getCharBoneMatrix(PLAYER_PED, 8)
-if ok then print(no.getMatrixPosition(head)) end
-```
+Drawing (`src/draw.c`): shapes, sprites and texts are queued and drawn once
+a frame from Render2dStuff's empty call at 0x53E293 (plugin-sdk's drawing
+event), under the HUD; spotlights from the effects pass (0x53E1E0). Both
+hooks keep every register and go on to whatever call was there, and go in
+with the first queued item. A frame the game does not draw (the menu, the
+fade-in) drops what was queued for it, and freeing a texture drops queued
+items that use it. Coronas (ids from 10000, the same each frame), shadows
+and lights go straight to the game's lists. Textures stay until 0D7D.
 
-`moonsamp_run(op, types, in, nout, out)` writes the inputs in SCM format (`i`
-an int, `f` a float, `s` a string inline), adds `nout` local variables for
-the outputs, calls the handler on a scratch script and copies the locals
-into `out`; it returns the condition. As in NewOpcodes, a matrix, quat or
-vector of 1 to 10 is one of ten scratch ones and colpoint 1 the scratch
-colpoint; a NULL one reads as zeroes. With CLEO, moonsamp registers none
-of them with it (CLEO 5 ships NewOpcodes.cleo, whose handlers its scripts
-expect); `moonsamp_run` uses moonsamp's.
+Where NewOpcodes does not do what its opcodes say, moonsamp does: it never
+installs its spotlight hook, gives permanent shadows a 1 ms life (its
+arguments are out of order), turns a shadow's second axis by 90 radians,
+and 0D41 writes to the scratch vertices whatever pointer it is given. Its
+audio stream opcodes are empty stubs.
+
+With CLEO, moonsamp registers none of them with it (CLEO 5 ships
+NewOpcodes.cleo, whose handlers its scripts expect); the lib runs
+moonsamp's.
+
+## How MoonLoader talks to SAMPFUNCS
+
+MoonLoader.asi does not link SAMPFUNCS. Every `samp*` / `raknet*` function is
+a SAMPFUNCS opcode (0AF8-0C9x) that SAMPFUNCS registers with
+`CLEO_RegisterOpcode`:
+
+- MoonLoader writes the parameters in SCM format into a buffer (strings up to
+  127 bytes as type 0x0E, longer ones as a `char*` in a type 0x01 int; results
+  go to local var 0..n), points a CRunningScript at it and calls
+  `CommandHandlerTable[op / 100](script, op)`. It reads the table address once
+  at startup ("Initializing opcode handler table") from the operand at
+  0x469FEE. ProcessOneCommand has its own copy at 0x469EF0; both are patched.
+- `isSampfuncsLoaded()` is true when the byte at 0x561931 is `E9`;
+  `isCleoLoaded()` checks 0x4667DB the same way. MoonLoader registers the
+  samp* functions only when both are true at startup, so moonsamp sets both
+  (each a jmp to a trampoline that runs the moved instruction).
+- Callbacks (chat commands, RakNet hooks) are labels in a hidden MoonLoader
+  script whose code is `0AA5 call <MoonLoader fn>` then a return opcode
+  (`0B43` for commands, `0BE0` for hooks). SAMPFUNCS runs that code on the
+  spot; so does moonsamp.
+
+With CLEO:
+
+- A callback stub's opcodes run on moonsamp's own handlers (0AA5 and the
+  return), not through CLEO: MoonLoader runs opcodes on the stub's script
+  while 0AA5 calls it, and CLEO 5 refuses an opcode on a script still inside
+  one (silently, for a script it did not start). Anything else in a stub
+  goes through the table at 0x469FEE: CLEO 4 replaces only that one, so
+  ProcessOneCommand's copy at 0x469EF0 still has the game's 27 slots.
+- CLEO 4 hooks 0x4667DB and so sets MoonLoader's CLEO marker; CLEO 5 does
+  not, so moonsamp sets it whenever the byte is not already `E9`.
+- CLEO 5 marks a script inside an opcode (bit 1 at +0xDF) and suspends one
+  that starts another before the first ends. A hook can fire while its
+  script is inside an opcode, so moonsamp clears the bit for the stub and
+  puts it back after. Under CLEO 4 any bit of +0xDF means "a CLEO script",
+  so it is left alone there.
 
 ## Diagnostics
+
+`moonsamp.log` in the game folder starts with the version, the CLEO it
+found, the SA-MP build and the hooks it put in (overlay, RakNet, and later
+the CText::Get and drawing hooks when a script first needs them).
 
 With a file named `moonsamp.trace` in the game folder, `moonsamp.log` also
 records each opcode's answer per script when it changes, SA-MP's own state
@@ -236,18 +320,49 @@ were dropped.
 ## Build and test
 
     ./build.sh          # -> moonsamp.asi (i686 mingw, no CRT)
-    test/run.sh         # opcode host, RakNet and the SA-MP opcodes under Wine,
-                        # against gta_sa.exe's script engine and a mapped (not
-                        # running) samp.dll with fake objects
+    test/run.sh         # every test below, under Wine in a throwaway prefix
     test/run.sh "" samp-dlls/*/samp.dll    # the SA-MP tests on every build
     CLEO="cleo4/CLEO.asi cleo5/CLEO.asi" test/run.sh   # cleo_test beside each CLEO
     D3D9=path/to/dxvk/x32/d3d9.dll test/run.sh   # overlay_test on the GPU,
                         # where it also checks the overlay's frame time
 
+`test/run.sh` runs moonsamp.asi against gta_sa.exe's own script engine (the
+exe is only read; the copy that runs imports only KERNEL32) and a mapped,
+not running, samp.dll with fake objects:
+
+| Test | What it checks |
+| --- | --- |
+| `host_test.c` | the opcode host and chat commands |
+| `newopcodes_test.c` | NewOpcodes through `moonsamp_run`, the drawing queue and its hooks (through a stand-in RW engine) |
+| `cleo5_test.c` | CLEO 5's opcodes through `moonsamp_run` |
+| `cleo_test.c` | moonsamp beside a real CLEO.asi: markers, table, callbacks, labels |
+| `raknet_test.c` | BitStreams and the RakNet hooks |
+| `phase2_test.c` | players, dialogs, textdraws, server |
+| `overlay_test.c` | the console and dxut dialogs on a real D3D9 device |
+| `newopcodes_lua_test.lua`, `cleo5_lua_test.lua` | the two libs under LuaJIT, and a function for every registered opcode |
+
+It needs wine, python3, luajit and i686-w64-mingw32-gcc.
+
+In-game checks (`test/ingame/`) cover what Wine cannot: the game's text,
+keys, RenderWare, MoonLoader's audio streams and what draws on screen. Copy
+one into `moonloader/tests/` and run it from Script-Helper's /sh menu; each
+writes its result to `moonloader/logs/`:
+
+| Script | |
+| --- | --- |
+| `moonsamp_selftest.lua` | the read-only SA-MP functions; run once under SAMPFUNCS and once under moonsamp, then `compare.py` the two logs |
+| `newopcodes_check.lua` | RenderWare math, bones, car components, line of sight |
+| `cleo5_check.lua` | key names, controller keys, labels, FXT, files, INI, memory, audio streams |
+| `draw_check.lua` | 10 seconds of every kind of drawing, textures, NewOpcodes' audio streams |
+
 Release: commit, tag `v<VERSION>`, push the tag, then
 `python3 tools/release.py v<VERSION> "moonsamp <VERSION>" notes.md`. It builds
 `dist/moonsamp.zip` from the tag (`tools/package.sh`), uploads it and creates
 the GitLab release with a drop-in install link.
+
+`tools/lib_docs.py <library>/sa/sa.json` writes `docs/newopcodes.md` and
+`docs/cleo5.md` again from the libs, with names and links from
+[Sanny Builder's library](https://github.com/sannybuilder/library).
 
 `tools/find_offsets.py` locates SA-MP functions in other samp.dll builds from
 their R3-1 addresses (relocation-masked signatures; `REF=<build>` uses another
@@ -258,4 +373,5 @@ where it cannot read them; it says which values those are.
 
 ## License
 
-GPL-3.0, see LICENSE.
+GPL-3.0, see LICENSE. The CLEO 5 opcodes follow CLEO 5's source (MIT); the
+NewOpcodes ones are written anew from what DK22Pac's plugin does.
