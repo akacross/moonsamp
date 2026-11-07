@@ -121,6 +121,36 @@ under moonsamp; every value both can give matches.
 Any other opcode returns false and leaves `""` / 0 in its results, and is
 named once in `moonsamp.log`.
 
+## NewOpcodes
+
+moonsamp also has 95 of the 128 opcodes of DK22Pac's NewOpcodes CLEO plugin
+(0D00-0D7F, written anew from what they do): matrices, quaternions, vectors,
+ped bones, car components and atomics, model alpha, collided entities, line
+of sight and colpoints, strings, memory and struct fields, the sun, weather,
+traffic lights, car lights, vehicle dummies, projectiles, volumes and the
+screen size. Drawing (shapes, sprites, text, TXD / PNG / BMP / DDS textures,
+coronas, shadows, lights, spotlights) and the CLEO audio stream effects are
+not there yet.
+
+MoonLoader cannot run an opcode it has no function for, so
+`moonloader/lib/newopcodes.lua` (in the release zip) has one per opcode,
+named after it, and runs it through moonsamp's `moonsamp_run` export:
+
+```lua
+local no = require 'newopcodes'
+local ok, head = no.getCharBoneMatrix(PLAYER_PED, 8)
+if ok then print(no.getMatrixPosition(head)) end
+```
+
+`moonsamp_run(op, types, in, nout, out)` writes the inputs in SCM format (`i`
+an int, `f` a float, `s` a string inline), adds `nout` local variables for
+the outputs, calls the handler on a scratch script and copies the locals
+into `out`; it returns the condition. As in NewOpcodes, a matrix, quat or
+vector of 1 to 10 is one of ten scratch ones and colpoint 1 the scratch
+colpoint; a NULL one reads as zeroes. With CLEO and NewOpcodes.cleo both
+installed, CLEO keeps NewOpcodes' handlers and `moonsamp_run` uses
+moonsamp's.
+
 ## Diagnostics
 
 With a file named `moonsamp.trace` in the game folder, `moonsamp.log` also

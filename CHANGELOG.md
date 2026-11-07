@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.0
+
+95 of NewOpcodes' opcodes, and a MoonLoader lib to call them. The in-game
+check passes 22 of 22.
+
+**Added**
+
+- NewOpcodes (DK22Pac's CLEO plugin, 0D00-0D7F) without CLEO: matrices,
+  quaternions, vectors, ped bones, car components and atomics, model alpha,
+  collided entities, line of sight and colpoints, strings, memory and
+  struct fields, the sun, weather, traffic lights, car lights, vehicle
+  dummies, projectiles, volumes and the screen size. Drawing and the CLEO
+  audio stream effects are not there yet.
+- `moonloader/lib/newopcodes.lua`, in the zip: a function per opcode, named
+  after it (`getCharBoneMatrix`, `getCarComponent`, ...), run through
+  moonsamp's new `moonsamp_run` export.
+- Unlike NewOpcodes, a bad handle or a NULL matrix gives false or zeroes
+  instead of a crash, and car lights are read only on automobiles.
+
 ## 0.7.2
 
 Opening the console no longer leaves keys held down.

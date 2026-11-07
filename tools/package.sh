@@ -11,6 +11,7 @@
 #   moonsamp.asi           the plugin
 #   moonsamp-LICENSE.txt   GPL-3.0 (renamed so it can't clash with another
 #                          mod's LICENSE in the game folder)
+#   moonloader/lib/newopcodes.lua   the NewOpcodes functions for scripts
 #
 # Entry times are the ref's commit time, so rebuilding a tag with the same
 # toolchain gives the same zip.
@@ -34,7 +35,8 @@ ZIP="$ROOT/dist/moonsamp.zip"
 
 python3 - "$ZIP" "$STAMP" \
     "moonsamp.asi=$WORK/moonsamp.asi" \
-    "moonsamp-LICENSE.txt=$WORK/src/LICENSE" <<'PY'
+    "moonsamp-LICENSE.txt=$WORK/src/LICENSE" \
+    "moonloader/lib/newopcodes.lua=$WORK/src/moonloader/lib/newopcodes.lua" <<'PY'
 import sys, zipfile
 out, stamp, *entries = sys.argv[1:]
 when = tuple(int(x) for x in stamp.split())
@@ -53,7 +55,7 @@ import hashlib, os, sys, zipfile
 path = sys.argv[1]
 for i in zipfile.ZipFile(path).infolist():
     data = zipfile.ZipFile(path).read(i)
-    print(f"  {i.filename:24} {len(data):6} bytes  sha256 {hashlib.sha256(data).hexdigest()}")
+    print(f"  {i.filename:32} {len(data):6} bytes  sha256 {hashlib.sha256(data).hexdigest()}")
 data = open(path, 'rb').read()
-print(f"  {os.path.basename(path):24} {len(data):6} bytes  sha256 {hashlib.sha256(data).hexdigest()}")
+print(f"  {os.path.basename(path):32} {len(data):6} bytes  sha256 {hashlib.sha256(data).hexdigest()}")
 PY

@@ -40,6 +40,8 @@ int script_host_install(void);
 int script_cleo_present(void);
 extern int script_trace;
 void script_register(uint16_t op, OpcodeFn fn);
+int script_try_register(uint16_t op, OpcodeFn fn);
+OpcodeFn script_handler(uint16_t op);
 void script_collect(Script *s, int n);
 void script_store(Script *s, int n);
 void script_cond(Script *s, int value);
@@ -118,6 +120,9 @@ typedef struct {
      * (obj_objects - 4) / 4 objects */
     uint16_t obj_objects;
 } Build;
+
+/* newopcodes.c */
+void newopcodes_install(void);
 
 /* samp.c */
 extern uintptr_t samp_base;

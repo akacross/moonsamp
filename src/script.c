@@ -93,15 +93,21 @@ static int8_t THISCALL dispatch(Script *s, int op)
     return 0;
 }
 
+/* The handler is kept either way: moonsamp_run calls it directly. Returns
+ * false when CLEO refuses the opcode. */
+int script_try_register(uint16_t op, OpcodeFn fn)
+{
+    handlers[op & 0x7FFF] = fn;
+    return !cleo_register || cleo_register(op, fn);
+}
+
 void script_register(uint16_t op, OpcodeFn fn)
 {
-    if (cleo_register) {
-        if (!cleo_register(op, fn))
-            ms_log("CLEO refused opcode %04X", op);
-        return;
-    }
-    handlers[op & 0x7FFF] = fn;
+    if (!script_try_register(op, fn))
+        ms_log("CLEO refused opcode %04X", op);
 }
+
+OpcodeFn script_handler(uint16_t op) { return handlers[op & 0x7FFF]; }
 
 void script_collect(Script *s, int n) { CollectParameters(s, (int16_t)n); }
 void script_store(Script *s, int n)   { StoreParameters(s, (int16_t)n); }

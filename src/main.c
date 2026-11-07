@@ -183,6 +183,7 @@ static void start(HMODULE self)
         ms_log("tracing opcode answers (moonsamp.trace)");
     if (!script_host_install())
         return;
+    newopcodes_install();
     if (!samp_install())
         return;
     if (!mark_loaded())
