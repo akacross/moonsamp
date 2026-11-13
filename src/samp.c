@@ -290,11 +290,18 @@ static Command *command_by_name(const char *name)
 /* MoonLoader never unregisters a script's commands: its
  * sampUnregisterChatCommand runs only when the script calls it. After a
  * reload 0B34 refused the new script the name, and typing it ran the dead
- * script's stub (a crash). MoonLoader's script finaliser (v.026.5-beta,
- * MoonLoader.asi+0x11EA30, thiscall on its script) is hooked to drop them;
- * the object it runs that script's opcodes on is at script+0x118. */
-#define ML_FINALISE    0x11EA30
-#define ML_SCRIPT_OPS  0x118
+ * script's stub (a crash). MoonLoader's script finaliser (thiscall on its
+ * script) is hooked to drop them. Per build: where it is, the SEH handler
+ * its second push names, and where the script keeps the object it runs its
+ * opcodes on (0x110 bytes in both). */
+static const struct {
+    const char *name;
+    uint32_t finalise, handler, ops;
+} ml_builds[] = {
+    {"v.026.5-beta", 0x11EA30, 0x17A2E0, 0x118},
+    {"v.027.0-preview3", 0x11E9D0, 0x1469D0, 0x134},
+};
+static uint32_t ml_script_ops;
 #define ML_OPS_SIZE    0x200
 
 /* Drops every command a script running opcodes on `ops` registered. */
@@ -316,24 +323,33 @@ __declspec(dllexport) void __cdecl moonsamp_script_ended(void *ops)
 
 void __cdecl ml_script_finalised(uint8_t *script)
 {
-    if (script && !IsBadReadPtr(script + ML_SCRIPT_OPS, 4))
-        moonsamp_script_ended(*(void **)(script + ML_SCRIPT_OPS));
+    if (script && ml_script_ops && !IsBadReadPtr(script + ml_script_ops, 4))
+        moonsamp_script_ended(*(void **)(script + ml_script_ops));
 }
 
 static void hook_ml_finaliser(void)
 {
     static int tried;
-    uint8_t *ml, *site, *tramp, *t, jmp[5];
+    uint8_t *ml, *site = NULL, *tramp, *t, jmp[5];
+    size_t i;
     if (tried)
         return;
     tried = 1;
     if (!(ml = (uint8_t *)GetModuleHandleA("MoonLoader.asi")))
         return;
-    site = ml + ML_FINALISE;
-    /* push ebp; mov ebp, esp; push -1; push <MoonLoader.asi+0x17A2E0> */
-    if (IsBadReadPtr(site, 10) || memcmp(site, "\x55\x8B\xEC\x6A\xFF\x68", 6) != 0 ||
-        *(uint32_t *)(site + 6) != (uint32_t)(ml + 0x17A2E0)) {
-        ms_log("MoonLoader's script finaliser is not where v.026.5-beta has it: a reloaded script keeps its old commands");
+    /* push ebp; mov ebp, esp; push -1; push <the build's handler> */
+    for (i = 0; i < sizeof ml_builds / sizeof ml_builds[0]; i++) {
+        uint8_t *at = ml + ml_builds[i].finalise;
+        if (IsBadReadPtr(at, 10) || memcmp(at, "\x55\x8B\xEC\x6A\xFF\x68", 6) != 0 ||
+            *(uint32_t *)(at + 6) != (uint32_t)(ml + ml_builds[i].handler))
+            continue;
+        site = at;
+        ml_script_ops = ml_builds[i].ops;
+        break;
+    }
+    if (!site) {
+        ms_log("MoonLoader's script finaliser is not where v.026.5-beta or v.027.0-preview3 has it: "
+               "a reloaded script keeps its old commands");
         return;
     }
     if (!(tramp = t = VirtualAlloc(NULL, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)))
@@ -354,7 +370,8 @@ static void hook_ml_finaliser(void)
     jmp[0] = 0xE9;
     *(int32_t *)(jmp + 1) = (int32_t)(tramp - (site + 5));
     if (ms_patch(site, jmp, sizeof jmp))
-        ms_log("MoonLoader's script finaliser hooked: an ending script's commands are unregistered");
+        ms_log("MoonLoader %s's script finaliser hooked: an ending script's commands are unregistered",
+               ml_builds[i].name);
 }
 
 /* ---- opcodes --------------------------------------------------------- */

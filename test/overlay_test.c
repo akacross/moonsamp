@@ -246,7 +246,8 @@ __declspec(dllexport) int run(void)
     size_t i;
     void (*tick)(void);
     void *write_file = (void *)GetProcAddress(GetModuleHandleA("kernel32.dll"), "WriteFile");
-    WriteLogFn ml_write;
+    void *crt_fwrite = NULL;
+    WriteLogFn ml_write, ml_fwrite;
     static HWND window_slot;
     void **vt, *orig_present;
     int ev, id;
@@ -259,6 +260,11 @@ __declspec(dllexport) int run(void)
         return 1;
     ml_write("[12:00:00.000001] (system)\tbefore: written before the hook\r\n");
     check(iat_slots(ml, write_file) == 1, "it imports WriteFile once");
+    ml_fwrite = (WriteLogFn)(void *)GetProcAddress(ml, "ml_fwrite");
+    /* the stand-in's C runtime: mingw's UCRT (as v.027's), or msvcrt */
+    for (i = 0; i < 2 && !(crt_fwrite && iat_slots(ml, crt_fwrite)); i++)
+        crt_fwrite = (void *)GetProcAddress(GetModuleHandleA(i ? "msvcrt.dll" : "ucrtbase.dll"), "fwrite");
+    check(ml_fwrite && crt_fwrite && iat_slots(ml, crt_fwrite) == 1, "and fwrite once");
 
     samp = LoadLibraryExA("samp.dll", NULL, DONT_RESOLVE_DLL_REFERENCES);
     check(samp != NULL, "samp.dll maps without running");
@@ -330,6 +336,11 @@ __declspec(dllexport) int run(void)
     check(GetWindowLongA(hwnd, GWL_WNDPROC) != (LONG)(base + L->update_players),
           "the window goes through moonsamp, over SA-MP's procedure");
     check(iat_slots(ml, write_file) == 0, "MoonLoader.asi's WriteFile is hooked");
+    check(iat_slots(ml, crt_fwrite) == 0, "and its fwrite (v.027's log)");
+    if (ml_fwrite) {
+        ml_fwrite("[12:00:01.000005] (script)\tfwrite: written through the C runtime\r\n");
+        ml_fwrite("[12:00:01.000006] (script)\tfwrite: and again, the stream known\r\n");
+    }
     ml_write("[12:00:01.000002] (script)\tafter: written through the hook\r\n");
     ml_write("[12:00:01.000003] (debug)\tthis debug line is hidden\r\n");
     ml_write("[12:00:01.000004] (error)\tsplit ");

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.4
+
+**Fixed**
+
+- MoonLoader v.027.0-preview3: the script finaliser hook from 0.11.3 was
+  only found on v.026.5-beta, so on 027 a reloaded script kept its old chat
+  commands (the new script was refused the name, and typing the command
+  could crash). The hook now knows both builds; moonsamp.log names the one
+  it found.
+- MoonLoader v.027.0-preview3: the console showed nothing from
+  moonloader.log, because 027 writes it with the C runtime's `fwrite`, not
+  `WriteFile`. Both are followed now.
+
 ## 0.11.3
 
 **Fixed**

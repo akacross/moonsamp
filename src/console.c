@@ -26,6 +26,9 @@
 #define COLOR_ERROR  "{FF7070}"
 
 typedef BOOL (WINAPI *WriteFileFn)(HANDLE, LPCVOID, DWORD, LPDWORD, LPOVERLAPPED);
+typedef size_t (__cdecl *FwriteFn)(const void *, size_t, size_t, void *);
+typedef int (__cdecl *FilenoFn)(void *);
+typedef intptr_t (__cdecl *OsHandleFn)(int);
 
 static struct {
     char name[33];
@@ -52,6 +55,10 @@ static int queue_count;
 
 static WriteFileFn orig_write;
 static HANDLE log_file, other_files[8];
+static FwriteFn orig_fwrite;
+static FilenoFn crt_fileno;
+static OsHandleFn crt_oshandle;
+static void *log_stream, *other_streams[8];
 static char partial[LINE_SIZE];
 static int partial_len, hooked;
 
@@ -170,10 +177,16 @@ static void feed(const char *data, DWORD n)
     }
 }
 
-static int is_log(HANDLE h)
+static int is_log_path(HANDLE h)
 {
     char path[MAX_PATH];
-    int i, n;
+    int n = GetFinalPathNameByHandleA(h, path, sizeof path, 0);
+    return n >= 15 && n < (int)sizeof path && lstrcmpiA(path + n - 15, "\\moonloader.log") == 0;
+}
+
+static int is_log(HANDLE h)
+{
+    int i;
     if (h == log_file)
         return 1;
     if (log_file)
@@ -181,8 +194,7 @@ static int is_log(HANDLE h)
     for (i = 0; i < 8; i++)
         if (other_files[i] == h)
             return 0;
-    n = GetFinalPathNameByHandleA(h, path, sizeof path, 0);
-    if (n >= 15 && n < (int)sizeof path && lstrcmpiA(path + n - 15, "\\moonloader.log") == 0) {
+    if (is_log_path(h)) {
         log_file = h;
         return 1;
     }
@@ -193,6 +205,39 @@ static int is_log(HANDLE h)
     return 0;
 }
 
+/* The same for a C stream (v.027 writes its log with fwrite). */
+static int is_log_stream(void *stream)
+{
+    int i, fd;
+    intptr_t h;
+    if (stream == log_stream)
+        return 1;
+    if (log_stream || !stream)
+        return 0;
+    for (i = 0; i < 8; i++)
+        if (other_streams[i] == stream)
+            return 0;
+    fd = crt_fileno(stream);
+    h = fd >= 0 ? crt_oshandle(fd) : -1;
+    if (h != -1 && is_log_path((HANDLE)h)) {
+        log_stream = stream;
+        return 1;
+    }
+    for (i = 0; i < 8 && other_streams[i]; i++)
+        ;
+    if (i < 8)
+        other_streams[i] = stream;
+    return 0;
+}
+
+static size_t __cdecl hook_fwrite(const void *buf, size_t size, size_t count, void *stream)
+{
+    size_t done = orig_fwrite(buf, size, count, stream);
+    if (done && buf && is_log_stream(stream))
+        feed(buf, (DWORD)(done * size));
+    return done;
+}
+
 static BOOL WINAPI hook_write(HANDLE h, LPCVOID buf, DWORD n, LPDWORD written, LPOVERLAPPED ov)
 {
     BOOL ok = orig_write(h, buf, n, written, ov);
@@ -201,7 +246,8 @@ static BOOL WINAPI hook_write(HANDLE h, LPCVOID buf, DWORD n, LPDWORD written, L
     return ok;
 }
 
-/* MoonLoader.asi's import of WriteFile goes through hook_write. */
+/* MoonLoader.asi's import of WriteFile goes through hook_write (v.026), its
+ * C runtime's fwrite through hook_fwrite (v.027). */
 static int hook_imports(HMODULE m)
 {
     uint8_t *b = (uint8_t *)m;
@@ -209,15 +255,31 @@ static int hook_imports(HMODULE m)
     IMAGE_DATA_DIRECTORY *dir = &nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
     IMAGE_IMPORT_DESCRIPTOR *imp = (IMAGE_IMPORT_DESCRIPTOR *)(b + dir->VirtualAddress);
     void *target = (void *)GetProcAddress(GetModuleHandleA("kernel32.dll"), "WriteFile"), *p = (void *)hook_write;
+    void *pf = (void *)hook_fwrite;
     int found = 0;
     if (!dir->VirtualAddress || !target)
         return 0;
     orig_write = (WriteFileFn)target;
     for (; imp->Name; imp++) {
         void **slot = (void **)(b + imp->FirstThunk);
-        for (; *slot; slot++)
+        /* an api-ms-win-crt name may not be a module of its own */
+        HMODULE crt = GetModuleHandleA((const char *)b + imp->Name), ucrt = GetModuleHandleA("ucrtbase.dll");
+        void *fw = crt ? (void *)GetProcAddress(crt, "fwrite") : NULL;
+        if (!fw && ucrt)
+            fw = (void *)GetProcAddress(crt = ucrt, "fwrite");
+        for (; *slot; slot++) {
             if (*slot == target && ms_patch(slot, &p, sizeof p))
                 found = 1;
+            if (!fw || *slot != fw || orig_fwrite)
+                continue;
+            crt_fileno = (FilenoFn)(void *)GetProcAddress(crt, "_fileno");
+            crt_oshandle = (OsHandleFn)(void *)GetProcAddress(crt, "_get_osfhandle");
+            if (!crt_fileno || !crt_oshandle)
+                continue;
+            orig_fwrite = (FwriteFn)fw;
+            if (ms_patch(slot, &pf, sizeof pf))
+                found = 1;
+        }
     }
     return found;
 }
@@ -303,7 +365,7 @@ void console_tick(void)
         if (hook_imports(m))
             backfill(m);
         else
-            ms_log("console: MoonLoader.asi imports no WriteFile, its log is not shown");
+            ms_log("console: MoonLoader.asi imports no WriteFile or fwrite, its log is not shown");
     }
     n = queue_count;
     queue_count = 0;
