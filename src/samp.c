@@ -285,6 +285,78 @@ static Command *command_by_name(const char *name)
     return NULL;
 }
 
+/* ---- MoonLoader scripts that end ------------------------------------ */
+
+/* MoonLoader never unregisters a script's commands: its
+ * sampUnregisterChatCommand runs only when the script calls it. After a
+ * reload 0B34 refused the new script the name, and typing it ran the dead
+ * script's stub (a crash). MoonLoader's script finaliser (v.026.5-beta,
+ * MoonLoader.asi+0x11EA30, thiscall on its script) is hooked to drop them;
+ * the object it runs that script's opcodes on is at script+0x118. */
+#define ML_FINALISE    0x11EA30
+#define ML_SCRIPT_OPS  0x118
+#define ML_OPS_SIZE    0x200
+
+/* Drops every command a script running opcodes on `ops` registered. */
+__declspec(dllexport) void __cdecl moonsamp_script_ended(void *ops)
+{
+    int i;
+    if (!ops)
+        return;
+    for (i = 0; i < MAX_COMMANDS; i++) {
+        uint8_t *at = (uint8_t *)commands[i].script;
+        if (!commands[i].used || at < (uint8_t *)ops || at >= (uint8_t *)ops + ML_OPS_SIZE)
+            continue;
+        if (commands[i].added && input())
+            input_remove(input(), commands[i].name);
+        commands[i].used = commands[i].added = 0;
+        ms_log("/%s: its script ended, unregistered", commands[i].name);
+    }
+}
+
+void __cdecl ml_script_finalised(uint8_t *script)
+{
+    if (script && !IsBadReadPtr(script + ML_SCRIPT_OPS, 4))
+        moonsamp_script_ended(*(void **)(script + ML_SCRIPT_OPS));
+}
+
+static void hook_ml_finaliser(void)
+{
+    static int tried;
+    uint8_t *ml, *site, *tramp, *t, jmp[5];
+    if (tried)
+        return;
+    tried = 1;
+    if (!(ml = (uint8_t *)GetModuleHandleA("MoonLoader.asi")))
+        return;
+    site = ml + ML_FINALISE;
+    /* push ebp; mov ebp, esp; push -1; push <MoonLoader.asi+0x17A2E0> */
+    if (IsBadReadPtr(site, 10) || memcmp(site, "\x55\x8B\xEC\x6A\xFF\x68", 6) != 0 ||
+        *(uint32_t *)(site + 6) != (uint32_t)(ml + 0x17A2E0)) {
+        ms_log("MoonLoader's script finaliser is not where v.026.5-beta has it: a reloaded script keeps its old commands");
+        return;
+    }
+    if (!(tramp = t = VirtualAlloc(NULL, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)))
+        return;
+    *t++ = 0x60;                                            /* pushad */
+    *t++ = 0x9C;                                            /* pushfd */
+    *t++ = 0x51;                                            /* push ecx: the script */
+    *t++ = 0xE8;                                            /* call ml_script_finalised */
+    *(int32_t *)t = (int32_t)((uint8_t *)ml_script_finalised - (t + 4));
+    t += 4;
+    *t++ = 0x83; *t++ = 0xC4; *t++ = 0x04;                  /* add esp, 4 */
+    *t++ = 0x9D;                                            /* popfd */
+    *t++ = 0x61;                                            /* popad */
+    memcpy(t, site, 5);                                     /* the moved instructions */
+    t += 5;
+    *t++ = 0xE9;
+    *(int32_t *)t = (int32_t)(site + 5 - (t + 4));
+    jmp[0] = 0xE9;
+    *(int32_t *)(jmp + 1) = (int32_t)(tramp - (site + 5));
+    if (ms_patch(site, jmp, sizeof jmp))
+        ms_log("MoonLoader's script finaliser hooked: an ending script's commands are unregistered");
+}
+
 /* ---- opcodes --------------------------------------------------------- */
 
 static void ready(void)
@@ -543,6 +615,7 @@ static int8_t __stdcall op_0B34(Script *s)
     script_string(s, name, sizeof name);
     label = script_int(s);
     ready();
+    hook_ml_finaliser();
     if (!name[0] || lstrlenA(name) > 32 || command_by_name(name) ||
         (input() && input_find(input(), name) >= 0)) {
         script_cond(s, 0);

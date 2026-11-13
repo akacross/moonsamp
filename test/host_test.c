@@ -135,6 +135,30 @@ __declspec(dllexport) int run(void)
     call(0x0C90, n);
     check(COND == 0, "0C90 no longer finds it");
 
+    /* a MoonLoader script that ends takes its commands with it */
+    {
+        void (__cdecl *ended)(void *) = (void (__cdecl *)(void *))GetProcAddress(m, "moonsamp_script_ended");
+        check(ended != NULL, "moonsamp_script_ended is exported");
+        n = put_str(0, "mscmd");
+        n = put_int(n, -2);
+        call(0x0B34, n);
+        check(COND == 1, "0B34 registers it again");
+        if (ended) ended(script + 0x200);
+        n = put_str(0, "mscmd");
+        call(0x0C90, n);
+        check(COND == 1, "another script ending leaves it");
+        if (ended) ended(script);
+        n = put_str(0, "mscmd");
+        call(0x0C90, n);
+        check(COND == 0, "its own script ending drops it");
+        n = put_str(0, "mscmd");
+        n = put_int(n, -2);
+        call(0x0B34, n);
+        check(COND == 1, "and the name is free for the reloaded script");
+        n = put_str(0, "mscmd");
+        call(0x0B63, n);
+    }
+
     /* MoonLoader's command stub, byte for byte, run by the game's own
      * ProcessOneCommand: 0B35 -> local 0, 0AA5 cb(obj, params), 0B43. */
     {

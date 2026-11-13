@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.3
+
+**Fixed**
+
+- A reloaded MoonLoader script crashed the game when its chat command was
+  typed. MoonLoader never unregisters a script's commands when it ends, so
+  the old registration stayed, the new script was refused the name, and the
+  command ran the dead script's callback. moonsamp now hooks MoonLoader's
+  script finaliser (v.026.5-beta) and unregisters an ending script's
+  commands; a MoonLoader build where it isn't found is logged, and commands
+  then behave as before.
+
 ## 0.11.2
 
 **Fixed**
