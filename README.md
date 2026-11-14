@@ -23,6 +23,10 @@ What it has:
   `moonloader/lib/newopcodes.lua`, every function in
   [docs/newopcodes.md](docs/newopcodes.md).
 
+MoonLoader v.026.5-beta and v.027.0-preview3 both work. 027's own new
+functions (pickups, `isCursorActive`) are in
+[docs/moonloader027.md](docs/moonloader027.md).
+
 ## Install
 
 Extract `moonsamp.zip` from the
