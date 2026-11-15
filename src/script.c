@@ -380,6 +380,15 @@ __declspec(dllexport) int __cdecl moonsamp_run(int op, const char *types, const 
     return s->cond_result != 0;
 }
 
+/* Where the game keeps script space: 0xA49960, unless a limit adjuster moved
+ * it (MAINsegmentSize / MissionSize). The operand at 0x5D5380 is one of the
+ * game's own references, which such a mod rewrites with the rest. */
+uint8_t *script_space(void)
+{
+    uint32_t p = *(uint32_t *)0x5D5380;
+    return p ? (uint8_t *)(uintptr_t)p : (uint8_t *)NATIVE_SCRIPT_SPACE;
+}
+
 /* A variable parameter: the address of a local or global variable (types
  * 0x02 / 0x03), or NULL for anything else (skipped). */
 int32_t *script_var(Script *s)
@@ -389,7 +398,7 @@ int32_t *script_var(Script *s)
     if (type == 0x02 || type == 0x03) {
         memcpy(&at, s->ip + 1, 2);
         s->ip += 3;
-        return type == 0x03 ? &s->locals[at < 34 ? at : 0] : (int32_t *)((uint8_t *)0xA49960 + at);
+        return type == 0x03 ? &s->locals[at < 34 ? at : 0] : (int32_t *)(script_space() + at);
     }
     script_collect(s, 1);
     return NULL;

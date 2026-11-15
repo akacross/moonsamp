@@ -285,6 +285,61 @@ static Command *command_by_name(const char *name)
     return NULL;
 }
 
+/* ---- MoonLoader and a moved script space ---------------------------- */
+
+/* MoonLoader reads script space at fixed addresses: $PLAYER_ACTOR (0xA4996C,
+ * which becomes PLAYER_PED) in code, and its base for getGameGlobal in data.
+ * With script space moved (a limit adjuster's MAINsegmentSize) they read the
+ * stale block and PLAYER_PED is 0, so each is pointed at the live one. Per
+ * build: the code operand (after an A1, mov eax,[moffs32]) and the data. */
+static const struct {
+    const char *name;
+    uint32_t code, data;
+} ml_space[] = {
+    {"v.026.5-beta", 0x1261D4, 0x1D0F68},
+    {"v.027.0-preview3", 0x123666, 0x189484},    /* data: the base its translator gave at load */
+};
+
+static void ml_follow_script_space(void)
+{
+    static uint8_t *ml;
+    static int build = -1, refused;
+    static uint32_t applied = NATIVE_SCRIPT_SPACE;
+    uint32_t now = (uint32_t)(uintptr_t)script_space(), code, data, *dp;
+    size_t i;
+    if (now == applied || refused)
+        return;
+    if (!ml && !(ml = (uint8_t *)GetModuleHandleA("MoonLoader.asi")))
+        return;
+    if (build < 0) {
+        for (i = 0; i < sizeof ml_space / sizeof ml_space[0]; i++) {
+            uint8_t *op = ml + ml_space[i].code;
+            if (!IsBadReadPtr(op - 1, 5) && op[-1] == 0xA1 && *(uint32_t *)op == applied + 0xC &&
+                !IsBadReadPtr(ml + ml_space[i].data, 4) && *(uint32_t *)(ml + ml_space[i].data) == applied) {
+                build = (int)i;
+                break;
+            }
+        }
+        if (build < 0) {
+            refused = 1;
+            ms_log("script space moved to %08lX; MoonLoader's reads of it are not where 026.5 or 027 has them, "
+                   "so PLAYER_PED may be 0", (unsigned long)now);
+            return;
+        }
+    }
+    code = now + 0xC;
+    dp = (uint32_t *)(ml + ml_space[build].data);
+    if (*(uint32_t *)(ml + ml_space[build].code) != applied + 0xC || *dp != applied)
+        return;     /* somebody else rewrote them */
+    if (!ms_patch(ml + ml_space[build].code, &code, 4))
+        return;
+    data = now;
+    ms_patch(dp, &data, 4);
+    ms_log("script space at %08lX: MoonLoader %s's PLAYER_PED and game globals follow it",
+           (unsigned long)now, ml_space[build].name);
+    applied = now;
+}
+
 /* ---- MoonLoader scripts that end ------------------------------------ */
 
 /* MoonLoader never unregisters a script's commands: its
@@ -494,6 +549,7 @@ static void trace_input(void)
 /* Once a frame, from the CTimer::Update hook. */
 void samp_tick(void)
 {
+    ml_follow_script_space();
     threads_tick();
     cleo5_tick();
     cleoplus_tick();

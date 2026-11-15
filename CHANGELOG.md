@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.7
+
+**Fixed**
+
+- With Open Limit Adjuster 2.0+, which moves the script space off 0xA49960,
+  MoonLoader's `PLAYER_PED` stayed 0 and every call on it faulted (reads at
+  0x46C and 0x718). MoonLoader reads `$PLAYER_ACTOR` through the address it
+  saw at load; moonsamp now points MoonLoader 026.5's and 027's read and stored
+  base at the moved space.
+- SAMPFUNCS, CLEO+ and global-variable opcodes read and wrote the old script
+  space under that limit adjuster; they follow the moved one.
+
 ## 0.11.6
 
 **Fixed**

@@ -83,7 +83,7 @@ static Dest dest_arg(Script *s)
         memcpy(&at, s->ip + 1, 2);
         s->ip += 3;
         d.cap = type <= 0x0B ? 8 : 16;
-        d.p = type == 0x0B || type == 0x11 ? (char *)&s->locals[at < 34 ? at : 0] : (char *)0xA49960 + at;
+        d.p = type == 0x0B || type == 0x11 ? (char *)&s->locals[at < 34 ? at : 0] : (char *)script_space() + at;
     } else if (type >= 0x01 && type <= 0x08) {
         script_collect(s, 1);
         d.p = ScriptParams[0].p;
@@ -775,7 +775,7 @@ static int8_t __stdcall op_0C3A(Script *s)
     if (type == 0x0A || type == 0x0B || type == 0x10 || type == 0x11) {
         memcpy(&at, s->ip + 1, 2);
         s->ip += 3;
-        p = type == 0x0B || type == 0x11 ? (const char *)&s->locals[at < 34 ? at : 0] : (const char *)0xA49960 + at;
+        p = type == 0x0B || type == 0x11 ? (const char *)&s->locals[at < 34 ? at : 0] : (const char *)script_space() + at;
     } else {
         p = lasting(s);
     }

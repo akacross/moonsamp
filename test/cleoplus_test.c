@@ -331,6 +331,21 @@ __declspec(dllexport) int run(void)
     op(0x0F16, "b", 0);
     op(0x0E1D, "", 0);
     check(cond, "0F16 sets it, 0E1D sees it");
+    {
+        /* script space moved, as a limit adjuster's MAINsegmentSize does */
+        static uint8_t moved[0x400];
+        uint32_t native = *(uint32_t *)0x5D5380, at = (uint32_t)(uintptr_t)moved;
+        DWORD old;
+        VirtualProtect((void *)0x5D5380, 4, PAGE_EXECUTE_READWRITE, &old);
+        *(uint32_t *)0x5D5380 = at;
+        moved[0x200] = 0;
+        op(0x0E1D, "", 0);
+        check(!cond, "0E1D reads the moved script space, not 0xA49960");
+        in[0] = 1;
+        op(0x0F16, "b", 0);
+        check(moved[0x200] == 1 && *(uint8_t *)(0xA49960 + 0x200) == 1, "0F16 writes the moved one, not 0xA49960");
+        *(uint32_t *)0x5D5380 = native;
+    }
 
     *(uint8_t *)(0x969130 + 5) = 1;
     in[0] = 5;

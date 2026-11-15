@@ -113,7 +113,7 @@
 #define MOUSE_ACCEL_H        (*(float *)0xB6EC1C)
 #define USE_MOUSE_3RD_PERSON (*(uint8_t *)0xB6EC2E)
 #define ON_MISSION_FLAG      (*(int32_t *)0xA476AC)
-#define SCRIPT_SPACE         ((uint8_t *)0xA49960)
+#define SCRIPT_SPACE         script_space()
 #define CUTSCENE_RUNNING     (*(uint8_t *)0xB5F851)
 #define CHEATS_ACTIVE        ((uint8_t *)0x969130)
 #define EXIT_ENTER_STATE     (*(int32_t *)0x96A7CC)

@@ -53,6 +53,8 @@ float script_float(Script *s);
 const char *script_string(Script *s, char *buf, size_t size);
 void script_skip_varargs(Script *s);
 int32_t *script_var(Script *s);
+#define NATIVE_SCRIPT_SPACE 0xA49960
+uint8_t *script_space(void);   /* moved by a limit adjuster's MAINsegmentSize */
 int script_run_label(Script *s, int32_t label);
 void script_label_return(void);
 
