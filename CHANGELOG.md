@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+**Fixed**
+
+- A script could not register a command SA-MP has itself (`/dl`, for one):
+  moonsamp refused the name, and `sampIsChatCommandDefined` said it was
+  taken. As with SAMPFUNCS, a script now takes over SA-MP's own command in
+  its slot and SA-MP gets it back when the script unregisters it or ends.
+  A command another module added is still refused.
+
 ## 0.11.7
 
 **Fixed**

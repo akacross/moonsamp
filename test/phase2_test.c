@@ -723,6 +723,32 @@ __declspec(dllexport) int run(void)
           AT(netgame, L->ng_state, int) == L->state[GS_WAITING] && AT(netgame, L->ng_state + 4, int) == 0,
           "0B38 sets the address and waits to connect");
 
+    /* SA-MP's own commands (proc inside samp.dll) may be taken over and come
+     * back on unregister; another module's command is still refused. */
+    {
+        void *own = (void *)(base + 0x1000);
+        static uint8_t foreign_proc;
+        int count = AT(input, 0x14DC, int);
+        AT(input, 0x00C + count * 4, void *) = own;
+        strcpy((char *)input + 0x24C + count * 33, "dl");
+        AT(input, 0x00C + (count + 1) * 4, void *) = &foreign_proc;
+        strcpy((char *)input + 0x24C + (count + 1) * 33, "othermod");
+        AT(input, 0x14DC, int) = count + 2;
+        begin(); put_str("dl"); op(0x0C90);
+        check(COND == 0, "0C90: SA-MP's own /dl is free to take");
+        begin(); put_str("dl"); put_int(-2); op(0x0B34);
+        check(COND == 1 && AT(input, 0x14DC, int) == count + 2 &&
+              AT(input, 0x00C + count * 4, void *) != own, "0B34 takes over SA-MP's /dl in its slot");
+        begin(); put_str("dl"); op(0x0C90);
+        check(COND == 1, "0C90: /dl is now a script's");
+        begin(); put_str("dl"); op(0x0B63);
+        check(COND == 1 && AT(input, 0x00C + count * 4, void *) == own &&
+              AT(input, 0x14DC, int) == count + 2, "0B63 gives SA-MP its /dl back");
+        begin(); put_str("othermod"); put_int(-2); op(0x0B34);
+        check(COND == 0, "0B34 still refuses another module's command");
+        AT(input, 0x14DC, int) = count;
+    }
+
     printf("%d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
 }

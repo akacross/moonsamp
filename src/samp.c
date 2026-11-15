@@ -174,6 +174,7 @@ typedef struct {
     Script *script;
     int32_t label;
     int used, added;
+    void *orig;     /* SA-MP's own proc this command replaced, put back on removal */
 } Command;
 
 static Command commands[MAX_COMMANDS];
@@ -214,21 +215,60 @@ static void input_remove(void *in, const char *name)
     AT(in, INPUT_COUNT, int) = n - 1;
 }
 
+/* A command whose proc is inside samp.dll is SA-MP's own (/dl, /fpslimit...).
+ * SAMPFUNCS lets a script take those over, so moonsamp does too. */
+static int samp_own_proc(void *proc)
+{
+    uint8_t *p = proc, *b = (uint8_t *)samp_base;
+    IMAGE_NT_HEADERS *nt;
+    if (!b || !p)
+        return 0;
+    nt = (IMAGE_NT_HEADERS *)(b + ((IMAGE_DOS_HEADER *)b)->e_lfanew);
+    return p >= b && p < b + nt->OptionalHeader.SizeOfImage;
+}
+
+static int samp_own_command(void *in, const char *name)
+{
+    int at = input_find(in, name);
+    return at >= 0 && samp_own_proc(AT(in, INPUT_PROCS + at * 4, void *));
+}
+
 /* Commands registered before SA-MP's input box exists are added once it does. */
 static void flush_commands(void)
 {
     void *in = input();
-    int i;
+    int i, at;
     if (!in)
         return;
     for (i = 0; i < MAX_COMMANDS; i++)
         if (commands[i].used && !commands[i].added) {
             commands[i].added = 1;
-            if (!input_add(in, commands[i].name, thunks + i * 10))
+            at = input_find(in, commands[i].name);
+            if (at >= 0 && samp_own_proc(AT(in, INPUT_PROCS + at * 4, void *))) {
+                commands[i].orig = AT(in, INPUT_PROCS + at * 4, void *);
+                AT(in, INPUT_PROCS + at * 4, void *) = thunks + i * 10;
+                ms_log("/%s replaces SA-MP's own command until its script ends", commands[i].name);
+            } else if (!input_add(in, commands[i].name, thunks + i * 10))
                 ms_log("could not add /%s to SA-MP", commands[i].name);
             else if (script_trace)
                 ms_log("trace: /%s added to SA-MP (%d commands)", commands[i].name, AT(in, INPUT_COUNT, int));
         }
+}
+
+/* Takes a command out of SA-MP's list, or gives SA-MP's own proc back. */
+static void drop_command(Command *c)
+{
+    void *in = input();
+    int at;
+    if (c->added && in) {
+        if (c->orig) {
+            if ((at = input_find(in, c->name)) >= 0)
+                AT(in, INPUT_PROCS + at * 4, void *) = c->orig;
+        } else
+            input_remove(in, c->name);
+    }
+    c->used = c->added = 0;
+    c->orig = NULL;
 }
 
 /* Runs a command's callback stub; 0B35 hands it params. */
@@ -369,9 +409,7 @@ __declspec(dllexport) void __cdecl moonsamp_script_ended(void *ops)
         uint8_t *at = (uint8_t *)commands[i].script;
         if (!commands[i].used || at < (uint8_t *)ops || at >= (uint8_t *)ops + ML_OPS_SIZE)
             continue;
-        if (commands[i].added && input())
-            input_remove(input(), commands[i].name);
-        commands[i].used = commands[i].added = 0;
+        drop_command(&commands[i]);
         ms_log("/%s: its script ended, unregistered", commands[i].name);
     }
 }
@@ -691,7 +729,7 @@ static int8_t __stdcall op_0B34(Script *s)
     ready();
     hook_ml_finaliser();
     if (!name[0] || lstrlenA(name) > 32 || command_by_name(name) ||
-        (input() && input_find(input(), name) >= 0)) {
+        (input() && input_find(input(), name) >= 0 && !samp_own_command(input(), name))) {
         script_cond(s, 0);
         return 0;
     }
@@ -705,6 +743,7 @@ static int8_t __stdcall op_0B34(Script *s)
     commands[i].script = s;
     commands[i].label = label;
     commands[i].added = 0;
+    commands[i].orig = NULL;
     commands[i].used = 1;
     flush_commands();
     script_cond(s, 1);
@@ -718,11 +757,8 @@ static int8_t __stdcall op_0B63(Script *s)
     Command *c;
     script_string(s, name, sizeof name);
     c = command_by_name(name);
-    if (c) {
-        if (c->added && input())
-            input_remove(input(), c->name);
-        c->used = c->added = 0;
-    }
+    if (c)
+        drop_command(c);
     script_cond(s, c != NULL);
     return 0;
 }
@@ -733,7 +769,9 @@ static int8_t __stdcall op_0C90(Script *s)
     char name[64];
     script_string(s, name, sizeof name);
     ready();
-    script_cond(s, command_by_name(name) || (input() && input_find(input(), name) >= 0));
+    /* SA-MP's own commands are free to take, as with SAMPFUNCS. */
+    script_cond(s, command_by_name(name) ||
+                   (input() && input_find(input(), name) >= 0 && !samp_own_command(input(), name)));
     return 0;
 }
 
