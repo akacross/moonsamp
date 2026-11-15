@@ -270,6 +270,17 @@ __declspec(dllexport) int run(void)
         check(got_obj == NULL, "0C62 then runs nothing");
     }
 
+    /* 0AF8 with no color, then 0AC8 258 @2 (PointOverAlert.cs's layout) */
+    {
+        size_t end;
+        n = put_str(0, "no color");
+        end = n = put8(n, 0x00);
+        n = put8(n, 0xC8); n = put8(n, 0x0A); n = put8(n, 0x05); n = put8(n, 0x02);
+        n = put8(n, 0x01); n = put8(n, 0x03); n = put8(n, 0x02); n = put8(n, 0x00);
+        call(0x0AF8, n);
+        check(IP == code + end, "0AF8 with the color omitted stops after the vararg end");
+    }
+
     /* tracing must stay cheap however many scripts come and go: MoonLoader
      * gives every lua_thread a script, and a full table once made every call
      * scan all of it, stalling the game. Fill it, then time calls that miss. */

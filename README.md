@@ -22,6 +22,12 @@ What it has:
   collisions, strings, game state, drawing and audio streams.
   `moonloader/lib/newopcodes.lua`, every function in
   [docs/newopcodes.md](docs/newopcodes.md).
+- **CLEO+'s opcodes** (JuniorDjjr's plugin) that MoonLoader, Lua and the
+  libs above do not already have: cars, chars, objects, weather, pickups,
+  input, weapon infos, models, the camera, AI flags, damage, easing and
+  noise. `moonloader/lib/cleoplus.lua`,
+  every function, what is left out and what is still to come in
+  [docs/cleoplus.md](docs/cleoplus.md).
 
 MoonLoader v.026.5-beta and v.027.0-preview3 both work. 027's own new
 functions (pickups, `isCursorActive`) are in
@@ -37,9 +43,10 @@ GTA San Andreas folder, next to `gta_sa.exe`:
 | --- | --- |
 | `moonsamp.asi` | the SA-MP API, the console and the opcodes |
 | `moonsamp-LICENSE.txt` | GPL-3.0 |
-| `moonloader/lib/moonsamp.lua` | the opcode runner the other two use |
+| `moonloader/lib/moonsamp.lua` | the opcode runner the other three use |
 | `moonloader/lib/newopcodes.lua` | NewOpcodes for scripts |
 | `moonloader/lib/cleo5.lua` | CLEO 5's opcodes for scripts |
+| `moonloader/lib/cleoplus.lua` | CLEO+'s opcodes for scripts |
 
 Rename `SAMPFUNCS.asi` to `SAMPFUNCS.asi.off`: moonsamp stays off while it
 is there. CLEO is optional. Updating is the same: extract over the old
@@ -304,6 +311,23 @@ With CLEO:
   script is inside an opcode, so moonsamp clears the bit for the stub and
   puts it back after. Under CLEO 4 any bit of +0xDF means "a CLEO script",
   so it is left alone there.
+
+## SAMPFUNCS opcodes for CLEO scripts
+
+CLEO scripts (.cs) written for SAMPFUNCS use opcodes MoonLoader never sends;
+`src/sfextra.c` has them: memory and arrays (0B2D/0B2E, 0C0C-0C12,
+0C1D-0C20), strings (0C13-0C2F, 0C3A), math in radians (0C00-0C0B),
+quaternions (0C30-0C33), colours (0B66/0B67), push/pop vars, tick count,
+line of sight, 3D to screen, the cursor, game keys, key presses,
+environment, unicode, modules and the clipboard. A string argument can be a
+buffer's address or inline text; a string result goes into the buffer an
+int variable points at, or into a string variable.
+
+Drawing (0B68-0B73, 0C3B-0C44, 0C8C), timers, downloads, global functions,
+custom threads, window/game screen conversion and the virtual-key injectors
+are stubs: each steps over its parameters, is false if it is a condition,
+and logs its opcode once. Without them a script would jump through CLEO's
+empty slot to address 0 every frame.
 
 ## Diagnostics
 

@@ -131,9 +131,9 @@ static float fabsf_(float x) { return x < 0 ? -x : x; }
  * a crash. */
 static float sink[16] __attribute__((aligned(16)));
 
-static void *scratch(Script *s, void *base, size_t size)
+
+static void *scratch_at(uint32_t v, void *base, size_t size)
 {
-    uint32_t v = (uint32_t)script_int(s);
     if (!v) {
         memset(sink, 0, sizeof sink);
         return sink;
@@ -141,19 +141,25 @@ static void *scratch(Script *s, void *base, size_t size)
     return v - 1 < 10 ? (uint8_t *)base + (v - 1) * size : (void *)(uintptr_t)v;
 }
 
+float *newopcodes_matrix(uint32_t v) { return scratch_at(v, matrices, sizeof matrices[0]); }
+float *newopcodes_quat(uint32_t v)   { return scratch_at(v, quats, sizeof quats[0]); }
+
+static void *scratch(Script *s, void *base, size_t size) { return scratch_at((uint32_t)script_int(s), base, size); }
+
 static float *matrix_arg(Script *s) { return scratch(s, matrices, sizeof matrices[0]); }
 static float *quat_arg(Script *s)   { return scratch(s, quats, sizeof quats[0]); }
 static float *vector_arg(Script *s) { return scratch(s, vectors, sizeof vectors[0]); }
 
-static uint8_t *colpoint_arg(Script *s)
+uint8_t *newopcodes_colpoint(uint32_t v)
 {
-    uint32_t v = (uint32_t)script_int(s);
     if (!v) {
         memset(sink, 0, sizeof sink);
         return (uint8_t *)sink;
     }
     return v == 1 ? colpoint : (uint8_t *)(uintptr_t)v;
 }
+
+static uint8_t *colpoint_arg(Script *s) { return newopcodes_colpoint((uint32_t)script_int(s)); }
 
 static void read_floats(Script *s, float *f, int n)
 {

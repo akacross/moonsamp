@@ -190,6 +190,7 @@ static void start(HMODULE self)
     newopcodes_install();
     draw_install();
     cleo5_install();
+    cleoplus_install();
     if (!samp_install())
         return;
     if (!mark_loaded())

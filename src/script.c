@@ -124,14 +124,20 @@ void script_cond(Script *s, int v)    { UpdateCompareFlag(s, v ? 1 : 0); }
 int script_cleo_present(void)         { return cleo_register != NULL; }
 uint32_t script_cleo_version(void)    { return cleo_version; }
 
+/* A 0x00 type is the end of a vararg list: the parameter is missing, and the
+ * marker is left for script_skip_varargs. The game's reader would eat it. */
 int32_t script_int(Script *s)
 {
+    if (!*s->ip)
+        return 0;
     CollectParameters(s, 1);
     return ScriptParams[0].i;
 }
 
 float script_float(Script *s)
 {
+    if (!*s->ip)
+        return 0.0f;
     CollectParameters(s, 1);
     return ScriptParams[0].f;
 }
@@ -156,6 +162,8 @@ const char *script_string(Script *s, char *buf, size_t size)
     size_t n;
     buf[0] = 0;
     switch (type) {
+    case 0x00:
+        return buf;
     case 0x0E:
         n = s->ip[1];
         copy_n(buf, size, (const char *)s->ip + 2, n);

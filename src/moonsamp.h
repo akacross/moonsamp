@@ -127,12 +127,23 @@ typedef struct {
 
 /* newopcodes.c */
 void newopcodes_install(void);
+float *newopcodes_matrix(uint32_t v);   /* 1-10: a scratch one, else a pointer */
+float *newopcodes_quat(uint32_t v);
+uint8_t *newopcodes_colpoint(uint32_t v);   /* 1: the scratch one */
 void draw_install(void);
 void draw_tick(void);
+
+/* sfextra.c */
+void sfextra_install(void);
+
+/* cleoplus.c */
+void cleoplus_install(void);
+void cleoplus_tick(void);
 
 /* cleo5.c */
 void cleo5_install(void);
 void cleo5_tick(void);
+int cleo5_key_hit(int k);
 
 /* samp.c */
 extern uintptr_t samp_base;

@@ -496,6 +496,7 @@ void samp_tick(void)
 {
     threads_tick();
     cleo5_tick();
+    cleoplus_tick();
     draw_tick();
     if (!build())
         return;
@@ -540,7 +541,7 @@ static int8_t __stdcall op_0AF8(Script *s)
     uint32_t color;
     void *c;
     text = script_string(s, buf, sizeof buf);
-    color = (uint32_t)script_int(s);
+    color = *s->ip ? (uint32_t)script_int(s) : 0xFFFFFF;  /* scripts may omit it */
     script_skip_varargs(s);
     if ((c = chat()) != NULL) {
         if (text != buf) {
@@ -1271,5 +1272,6 @@ int samp_install(void)
     threads_install();
     console_install();
     dxut_install();
+    sfextra_install();    /* last: its stubs fill only the gaps */
     return 1;
 }

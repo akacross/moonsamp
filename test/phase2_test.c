@@ -338,6 +338,8 @@ __declspec(dllexport) int run(void)
     check(chat_color == 0xFF00FFFF && strcmp(chat_text, "pink") == 0, "0AF8 0xFF00FF reaches AddMessage as RGBA FF00FFFF (pink, not green)");
     begin(); put_str("white"); put_int(-1); opbuf[n++] = 0; op(0x0AF8);
     check(chat_color == 0xFFFFFFFF, "0AF8 -1 stays white");
+    begin(); put_str("bare"); opbuf[n++] = 0; op(0x0AF8);
+    check(chat_color == 0xFFFFFFFF && strcmp(chat_text, "bare") == 0, "0AF8 with the color omitted is white");
 
     /* players */
     check(op_cond0(0x0B61) == 1, "0B61 local player spawned");

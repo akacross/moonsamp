@@ -107,6 +107,25 @@ __declspec(dllexport) int run(void)
     call_on(script, code, 0x0B4F);
     check(LOCAL(0) == 0 && *(uint8_t **)(script + 0x14) == code + n, "0B4F runs through CLEO's table");
 
+    /* SAMPFUNCS opcodes CLEO has no slot for: a null one calls address 0 */
+    {
+        static char line[] = "Cross_Lynch has taken control of the Materials Factory";
+        LOCAL(0) = 0;
+        n = put_int(0, (int32_t)(uintptr_t)line);
+        n = put_str(n, "TAKEN control");
+        n = put_local0(n);
+        call_on(script, code, 0x0C29);
+        check(COND == 1 && LOCAL(0) == (int32_t)(uintptr_t)strstr(line, "taken") &&
+              *(uint8_t **)(script + 0x14) == code + n, "0C29 stristr runs through CLEO's table (PointOverAlert.cs)");
+        n = put8(put8(0, 0x74), 0x0C);
+        n = put_int(n, 100);
+        n = put_int(n, 0);
+        n = put_local0(n);
+        call_on(script, code + 2, 0x0C74);
+        check(COND == 0 && *(uint8_t **)(script + 0x14) == code + n,
+              "a stubbed SAMPFUNCS opcode (0C74) steps over its parameters through CLEO's table");
+    }
+
     run_op = (RunFn)(void *)GetProcAddress(m, "moonsamp_run");
     {
         int32_t in[1] = { (int32_t)(uintptr_t)"moonsamp" }, out[1] = { 0 };

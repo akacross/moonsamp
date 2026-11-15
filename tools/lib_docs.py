@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Write docs/newopcodes.md and docs/cleo5.md: every function in
-moonloader/lib/newopcodes.lua and cleo5.lua, from their def lines and
+Write docs/newopcodes.md, docs/cleo5.md and docs/cleoplus.md: every function
+in moonloader/lib/newopcodes.lua, cleo5.lua and cleoplus.lua, from their def lines and
 comments, with parameter names and links from Sanny Builder's library.
 
     git clone --depth 1 https://github.com/sannybuilder/library
@@ -24,6 +24,10 @@ for ext in sa["extensions"]:
 
 LETTER = {"i": "int", "b": "bool", "f": "float", "s": "string", "x": "text", "v": "value", "u": "pointer"}
 RENAME = {"self": None, "end": "finish", "function": "fn"}
+
+def camel(n):
+    p = n.lower().split("_")
+    return p[0] + "".join(x.capitalize() for x in p[1:])
 
 def ident(p):
     n = p.get("name") or p.get("type", "value")
@@ -50,6 +54,9 @@ def parse(path):
             name, args, note = f.groups()
             body = " ".join(lines[i:i + 4])
             om = re.search(r"call\(0x([0-9A-F]{4})", body)
+            if not om:      # plain Lua: the command it stands for, by name
+                om = re.match(r"(.*)", next((k for k, (e, c) in cmds.items() if camel(c["name"]) == name), ""))
+                om = om if om.group(1) else None
             cm = re.search(r"call\(0x[0-9A-F]{4}, .*?, ('[^']*'|[^,]+), (true|false)", body)
             outs = cm.group(1).strip("'") if cm and cm.group(1).startswith("'") else "?"
             out.append(dict(section=section, name=name, op=om.group(1) if om else "", hand=args, outs=outs,
@@ -117,7 +124,7 @@ def row(e, base):
     scm = f"`{c['name']}`" if c else ""
     return f"| {link} | `{e['name']}({args})` | {rets or ''} | {scm} | {note} |"
 
-def write(lib, title, intro, out):
+def write(lib, title, intro, out, extra=""):
     entries = parse(LIB + lib)
     text = [f"# {title}", "", intro, "",
             "Opcodes link to their page in [Sanny Builder's library](https://library.sannybuilder.com/#/sa); "
@@ -129,6 +136,8 @@ def write(lib, title, intro, out):
             text += ["", f"## {(section or 'Matrices, entities, strings and game state')[0].upper() + (section or 'Matrices, entities, strings and game state')[1:]}", "",
                      "| Opcode | Function | Returns | SCM name | Notes |", "| --- | --- | --- | --- | --- |"]
         text.append(row(e, lib))
+    if extra:
+        text += ["", open(extra).read().rstrip()]
     open(OUT + out, "w").write("\n".join(text).replace("\n\n\n", "\n\n") + "\n")
     print(out, len(entries))
 
@@ -140,3 +149,9 @@ write("cleo5.lua", "cleo5.lua",
       "Every function in `moonloader/lib/cleo5.lua`: CLEO 5's own opcodes for MoonLoader scripts, "
       "run by moonsamp.asi with or without CLEO. `local cleo5 = require 'cleo5'`.",
       "cleo5.md")
+write("cleoplus.lua", "cleoplus.lua",
+      "Every function in `moonloader/lib/cleoplus.lua`: CLEO+'s opcodes for MoonLoader scripts, "
+      "run by moonsamp.asi with or without CLEO. `local cp = require 'cleoplus'`. Only what MoonLoader, "
+      "Lua, newopcodes.lua and cleo5.lua do not already have is here; the rest is listed at the end "
+      "with what to use instead.",
+      "cleoplus.md", os.path.join(ROOT, "tools", "cleoplus_notes.md"))

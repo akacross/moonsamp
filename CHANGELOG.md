@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+**Added**
+
+- CLEO+ for MoonLoader scripts, with or without CLEO: 139 of its opcodes in
+  `moonloader/lib/cleoplus.lua` (cars, chars, objects, weather, pickups,
+  input, weapon infos, models, the camera, AI flags, pad and camera locks,
+  last-frame damage, save slot, model names), plus its easing and noise in
+  Lua. What MoonLoader, Lua, newopcodes.lua or cleo5.lua already do is left
+  out, each with what to use instead, in docs/cleoplus.md; events, drawing,
+  blips, render objects and the rest come later.
+- docs/moonloader027.md: MoonLoader v.027's pickup functions and
+  `isCursorActive`.
+- SAMPFUNCS opcodes for CLEO scripts: memory, arrays, strings, math,
+  quaternions, line of sight, keys, modules and the clipboard (README,
+  "SAMPFUNCS opcodes for CLEO scripts"). The rest of SAMPFUNCS' opcodes are
+  stubs that step over their parameters: with CLEO 4, PointOverAlert.cs's
+  0C29 jumped to address 0 every frame and froze the game.
+- 0B2D / 0B2E (SA-MP memory by offset) take SAMPFUNCS' R1 offsets on every
+  build: known ones (the nametag drawer, as samp++.cs patches it) move to the
+  running build's; any other is not written outside R1, where it would land
+  in other code.
+
+**Fixed**
+
+- CLEO scripts that end an opcode's arguments early, like 0AF8 with no color
+  (PointOverAlert.cs): the missing argument read the end marker, the script
+  ran on from mid-opcode and the game crashed writing to address 0. A
+  missing int, float or string is now 0 or empty, and 0AF8's color white.
+
 ## 0.11.4
 
 **Fixed**

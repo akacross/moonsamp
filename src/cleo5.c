@@ -455,6 +455,7 @@ void cleo5_tick(void)
 
 static int key_down(int k) { return (keys_now[k] & 0x80) != 0; }
 static int key_hit(int k) { return key_down(k) && !(keys_then[k] & 0x80); }
+int cleo5_key_hit(int k) { return (unsigned)k < 256 && key_hit(k); }
 
 /* 2080 is_key_just_pressed %1d% */
 static int8_t __stdcall op_2080(Script *s)
