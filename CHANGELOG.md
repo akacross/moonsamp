@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+**Fixed**
+
+- MoonLoader v.027.0-preview3: every audio stream function did nothing, because
+  027's AudioStream userdata reaches its object another way and the BASS
+  channel came out 0. The channel is now found by trying each layout and
+  asking BASS which handle is real.
+- With CLEO 4, text labels and FXT files (`addTextLabelFormatted`, `loadFxt`)
+  read back empty on 0.3.DL: another hook sits over CLEO 4's, so CLEO's labels
+  never reached CText::Get. moonsamp keeps them itself unless CLEO is 5.
+- CLEO+ `getModelType` returned a large number: the game's answer is a byte
+  in al, and the rest of eax was read too.
+
 ## 0.11.5
 
 **Added**

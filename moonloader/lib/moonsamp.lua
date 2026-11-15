@@ -95,20 +95,64 @@ function M.call(op, inputs, outputs, cond, ...)
     return unpack(r, 1, #outputs)
 end
 
--- MoonLoader's AudioStream is a userdata holding a shared_ptr whose object
--- has the BASS channel at +8 (MoonLoader 0.26: 0x1012BE60). Anything else
--- is taken as a channel already.
+-- MoonLoader's AudioStream object keeps its BASS channel at +8 (0.26:
+-- 0x1012BE60, 027: 0x1012A050); the userdata reaches it differently in each
+-- build. 026's path is tried first, then the userdata's first words as the
+-- object or a pointer to it; a channel counts when BASS knows the handle.
+-- Anything that is not a userdata is taken as a channel already.
 local u32p = ffi.typeof('uint32_t *')
-function M.channel(stream)
-    if type(stream) ~= 'userdata' then return stream end
-    local a = tonumber(ffi.cast('uintptr_t', ffi.cast('void *', stream)))
+pcall(ffi.cdef, [[
+int BASS_ChannelIsActive(uint32_t handle);
+int BASS_ErrorGetCode(void);
+int IsBadReadPtr(const void *p, uintptr_t n);
+]])
+local bass
+do
+    local ok, lib = pcall(ffi.load, 'bass.dll')
+    if ok then bass = lib end
+end
+
+local function read(at)
+    if not at or at == 0 or ffi.C.IsBadReadPtr(ffi.cast('void *', at), 4) ~= 0 then return nil end
+    return tonumber(ffi.cast(u32p, at)[0])
+end
+
+local function is_channel(c)
+    if not c or c == 0 or not bass then return false end
+    bass.BASS_ChannelIsActive(c)
+    return bass.BASS_ErrorGetCode() == 0
+end
+
+local function from_object(obj) return obj and read(obj + 8) end
+
+local function candidates(a)
     local c = a + 4 + (-a) % 4
     local d = c + (-c) % 4
-    local p = ffi.cast(u32p, d + (-(d + 4)) % 4 + 4)[0]
-    if p == 0 then return 0 end
-    local obj = ffi.cast(u32p, p)[0]
-    if obj == 0 then return 0 end
-    return tonumber(ffi.cast(u32p, obj + 8)[0])
+    local list = { function() local p = read(d + (-(d + 4)) % 4 + 4); return from_object(read(p)) end }
+    for k = 0, 7 do
+        list[#list + 1] = function() return from_object(a + 4 * k) end
+        list[#list + 1] = function() return from_object(read(a + 4 * k)) end
+        list[#list + 1] = function() return from_object(read(read(a + 4 * k))) end
+    end
+    return list
+end
+
+local stream_layout     -- the candidate that worked last, tried first
+function M.channel(stream)
+    if type(stream) ~= 'userdata' then return stream end
+    local list = candidates(tonumber(ffi.cast('uintptr_t', ffi.cast('void *', stream))))
+    if stream_layout then
+        local c = list[stream_layout]()
+        if is_channel(c) then return c end
+    end
+    for k, f in ipairs(list) do
+        local c = f()
+        if is_channel(c) then
+            stream_layout = k
+            return c
+        end
+    end
+    return 0
 end
 
 -- target[name] runs op on an audio stream, its first argument.

@@ -330,9 +330,13 @@ static int hook_text(void)
     return 1;
 }
 
-/* With CLEO its own labels serve them (0ADF add, 0AE0 remove): CLEO 5
- * hooks CText::Get by putting the original bytes back for every call it does
- * not answer, which would take away a hook over its own. */
+/* With CLEO 5 its own labels serve them (0ADF add, 0AE0 remove): it hooks
+ * CText::Get by putting the original bytes back for every call it does not
+ * answer, which would take away a hook over its own. CLEO 4 leaves a hook
+ * alone, but on 0.3.DL another one sits over CLEO 4's and its labels never
+ * reach CText::Get, so with CLEO 4 moonsamp keeps them. */
+static int cleo_labels(void) { return script_cleo_present() && script_cleo_version() >= 0x05000000; }
+
 typedef int8_t (THISCALL *HandlerFn)(Script *, int);
 
 static int cleo_label(const char *key, const char *text)
@@ -365,7 +369,7 @@ static int fxt_add(const char *key, const char *text)
 {
     int i, n = lstrlenA(text);
     char *copy;
-    if (script_cleo_present())
+    if (cleo_labels())
         return key[0] && cleo_label(key, text);
     if (!key[0] || lstrlenA(key) >= (int)sizeof fxt[0].key || !hook_text() || (i = fxt_slot(key, 1)) < 0)
         return 0;
@@ -386,7 +390,7 @@ static int fxt_add(const char *key, const char *text)
 static int fxt_remove(const char *key)
 {
     int i = fxt_count ? fxt_slot(key, 0) : -1;
-    if (script_cleo_present())
+    if (cleo_labels())
         return key[0] && cleo_label(key, NULL);
     if (i < 0 || !fxt[i].text)
         return 0;

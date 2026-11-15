@@ -24,12 +24,15 @@ game pickups, so they are listed too.
 | --- | --- | --- |
 | `getAllPickups()` | table | handles of every slot whose type is not 0 (`PICKUP_NONE`), as an array |
 | `getPickupModel(handle)` | int | model id; 0 for a stale or bad handle |
-| `getPickupType(handle)` | int | `ePickupType`, below; 0 for a stale or bad handle |
+| `getPickupType(handle)` | int | `ePickupType`, below; 0 for a stale or bad handle, and for a removed pickup |
 | `getPickupPointer(handle)` | int | the `CPickup` address; 0 for a stale or bad handle |
 | `getPickupPointerHandle(pointer)` | int | the handle of the `CPickup` at `pointer`; -1 when it is not a slot of the array or the slot is empty |
 
 A handle is checked with `CPickups::GetActualPickupIndex` (0x4552A0), so one
-whose slot was reused is stale.
+whose slot was reused is stale. Removing a pickup does not make its handle
+stale: the slot's reference count changes only when the game reuses it, so
+until then the old handle still gives the slot, with type 0 and the model and
+pointer it had. Check the type to tell a removed pickup.
 
 `CPickup` (0x20 bytes), for reading it through `getPickupPointer`:
 

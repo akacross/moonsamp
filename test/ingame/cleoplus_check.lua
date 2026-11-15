@@ -41,7 +41,7 @@ local function run(cp)
     -- the player
     local pct = cp.getCharHealthPercent(ped)
     check('getCharHealthPercent in 0..100+', pct > 0 and pct <= 200, pct)
-    check('isCharScriptControlled(player) is false', not cp.isCharScriptControlled(ped))
+    value('isCharScriptControlled(player) (the script made it)', cp.isCharScriptControlled(ped))
     value('getCharPedstate / getCharMoveState', cp.getCharPedstate(ped), cp.getCharMoveState(ped))
     check('getTimeCharIsDead alive: -1', cp.getTimeCharIsDead(ped) == -1, cp.getTimeCharIsDead(ped))
     value('getCharStatId / getCharFear', cp.getCharStatId(ped), cp.getCharFear(ped))
@@ -145,11 +145,12 @@ local function run(cp)
     check('getModelNamePointer(411) is "infernus"', name:lower() == 'infernus', name)
     value('getCurrentSaveSlot / isGameFirstStart', cp.getCurrentSaveSlot(), cp.isGameFirstStart())
     local memory = require 'memory'
+    local read0 = memory.getuint32(0x510C28)     -- another mod may point it elsewhere already
     cp.setCameraControl(false)
-    local zeroed = memory.getuint32(0x510C28) ~= 0xB6EC18
+    local zeroed = memory.getuint32(0x510C28) ~= read0 and memory.getfloat(memory.getuint32(0x510C28)) == 0
     cp.setCameraControl(true)
-    check('setCameraControl false / true patches and restores', zeroed and memory.getuint32(0x510C28) == 0xB6EC18,
-        memory.getuint32(0x510C28))
+    check('setCameraControl false / true patches and restores', zeroed and memory.getuint32(0x510C28) == read0,
+        read0, memory.getuint32(0x510C28))
     cp.setPlayerControlPadMovement(0, false)
     wait(100)
     local locked = bit.band(memory.getuint16(0xB73458 + 0x10E), 1) ~= 0

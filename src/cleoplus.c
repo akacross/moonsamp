@@ -168,7 +168,7 @@ typedef void (__cdecl *WorldAddFn)(void *);
 typedef void *(THISCALL *SimplestTaskFn)(void *);
 typedef void (THISCALL *QuatFn)(void *);
 typedef void (THISCALL *MatFromVecFn)(void *, void *, const float *, const float *);
-typedef int (THISCALL *ModelTypeFn)(void *);
+typedef uint8_t (THISCALL *ModelTypeFn)(void *);   /* a byte in al */
 typedef void (THISCALL *PlayHornFn)(void *);
 typedef int (THISCALL *TaskIdFn)(void *);
 typedef void *(THISCALL *SubTaskFn)(void *);

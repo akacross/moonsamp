@@ -5,7 +5,8 @@
     Copy into moonloader/tests/ and run it from the /sh menu: once you are
     spawned it writes moonloader/logs/pickups_check.log and unloads. It makes
     one pickup 4 m north of you and removes it, and shows the cursor briefly.
-    Needs MoonLoader v.027; on 026.5 every check fails.
+    Needs MoonLoader v.027; on 026.5 every check fails. SA-MP's own
+    pickups use type 23, past the game's 22.
 ]]
 script_name('pickups_check')
 
@@ -47,7 +48,7 @@ local function run()
     for _, h in ipairs(all) do
         local ptr = getPickupPointer(h)
         local model, ptype = getPickupModel(h), getPickupType(h)
-        if ptr == 0 or ptype < 1 or ptype > 22 or getPickupPointerHandle(ptr) ~= h
+        if ptr == 0 or ptype < 1 or getPickupPointerHandle(ptr) ~= h
             or memory.getint16(ptr + 0x18) ~= model or memory.getuint8(ptr + 0x1C) ~= ptype then
             bad = bad + 1
             value('odd pickup', string.format('0x%08X', h), model, ptype, string.format('0x%08X', ptr))
@@ -57,8 +58,10 @@ local function run()
 
     -- one of our own
     local x, y, z = getCharCoordinates(PLAYER_PED)
-    local h = createPickup(1239, 3, x, y + 4, z)
-    value('createPickup 1239 type 3', string.format('0x%08X', h))
+    -- the first value is 0213's condition flag, which it never sets
+    local _, h = createPickup(1239, 3, x, y + 4, z)
+    check('createPickup 1239 type 3', type(h) == 'number' and h > 0, h and string.format('0x%08X', h))
+    if type(h) ~= 'number' or h <= 0 then return end
     check('our pickup is listed', listed(h))
     check('getPickupModel is 1239', getPickupModel(h) == 1239, getPickupModel(h))
     check('getPickupType is 3', getPickupType(h) == 3, getPickupType(h))
@@ -74,9 +77,11 @@ local function run()
 
     removePickup(h)
     check('removed: not listed', not listed(h))
-    check('removed: getPickupModel is 0', getPickupModel(h) == 0, getPickupModel(h))
+    -- the slot's reference count changes only when it is reused, so the old
+    -- handle still names it: type 0, the model and pointer as they were
     check('removed: getPickupType is 0', getPickupType(h) == 0, getPickupType(h))
-    check('removed: getPickupPointer is 0', getPickupPointer(h) == 0, getPickupPointer(h))
+    check('removed: the old handle still names the slot', getPickupPointer(h) == ptr and getPickupModel(h) == 1239,
+        getPickupPointer(h), getPickupModel(h))
     check('removed: getPickupPointerHandle(old pointer) is -1', getPickupPointerHandle(ptr) == -1,
         getPickupPointerHandle(ptr))
 
