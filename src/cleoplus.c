@@ -45,6 +45,7 @@
 #define PED_MAX_HEALTH       0x544
 #define PED_NEED_UNTIL       0x54C
 #define PED_VEHICLE          0x58C
+#define PED_FLAGS_IN_VEHICLE 0x46D     /* m_nPedFlags bit 8: in a vehicle */
 #define PED_TYPE             0x598
 #define PED_STATS            0x59C
 #define PED_WEAPONS          0x5A0     /* CWeapon[13], 0x1C each: type, state, clip */
@@ -365,7 +366,14 @@ static int8_t __stdcall op_0E82(Script *s)
 
 static int really_in_air(uint8_t *e) { return e && !(e[PHYS_FLAGS1] & 3); }
 
-static int8_t __stdcall op_0E92(Script *s) { script_cond(s, really_in_air(ped_arg(s))); return 0; }
+/* A ped in a vehicle has no physics of its own (its flags read as in the
+ * air), so its vehicle answers. */
+static int8_t __stdcall op_0E92(Script *s)
+{
+    uint8_t *p = ped_arg(s), *v = p && (p[PED_FLAGS_IN_VEHICLE] & 1) ? AT(p, PED_VEHICLE, uint8_t *) : NULL;
+    script_cond(s, really_in_air(v ? v : p));
+    return 0;
+}
 static int8_t __stdcall op_0E93(Script *s) { script_cond(s, really_in_air(veh_arg(s))); return 0; }
 static int8_t __stdcall op_0E94(Script *s) { script_cond(s, really_in_air(obj_arg(s))); return 0; }
 

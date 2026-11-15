@@ -11,6 +11,8 @@
 - With CLEO 4, text labels and FXT files (`addTextLabelFormatted`, `loadFxt`)
   read back empty on 0.3.DL: another hook sits over CLEO 4's, so CLEO's labels
   never reached CText::Get. moonsamp keeps them itself unless CLEO is 5.
+- CLEO+ `isCharReallyInAir` said a ped in a car was in the air: a riding ped
+  has no physics of its own. Its vehicle answers now (CLEO+ gets it wrong too).
 - CLEO+ `getModelType` returned a large number: the game's answer is a byte
   in al, and the rest of eax was read too.
 

@@ -259,6 +259,8 @@ models and characters (0E9A, 0E9B, 0F00, 0F01, 0F05), sprite textures
 - `setCameraControl` patches the camera's 33 mouse and stick reads as CLEO+
   does, but writes 0050FB12, the operand: CLEO+ writes 0050FB10, the start
   of the fmul there.
+- `isCharReallyInAir` answers by the vehicle for a ped in one: a riding ped
+  has no physics of its own, so CLEO+ calls it in the air.
 - Damage (0EB5, 0EB6) counts for the frame it was taken and the next, and
   the damage hooks go in the first time a script asks for it.
 - `getCurrentSaveSlot`, `isGameFirstStart` and `getModelNamePointer` hook

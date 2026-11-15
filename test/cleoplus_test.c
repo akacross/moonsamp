@@ -254,6 +254,20 @@ __declspec(dllexport) int run(void)
     op(0x0EFA, "i", 1);
     check(out[0] == 60, "0EFA fear");
 
+    /* in a car the ped's own flags read as in the air: its car answers */
+    PED[0x41] = 0;
+    AT(PED, 0x58C, void *) = CAR;
+    CAR[0x41] = 2;
+    PED[0x46D] |= 1;
+    in[0] = PED_H;
+    op(0x0E92, "i", 0);
+    check(!cond, "0E92 in a car on the ground: not in the air");
+    PED[0x46D] &= ~1;
+    in[0] = PED_H;
+    op(0x0E92, "i", 0);
+    check(cond, "0E92 on foot with no ground flags: in the air");
+    AT(PED, 0x58C, void *) = NULL;
+
     in[0] = PED_H;
     op(0x0EA4, "i", 0);
     check(!cond, "0EA4 not on fire");
