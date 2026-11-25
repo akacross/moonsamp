@@ -32,6 +32,7 @@ static void begin(void) { n = 0; }
 static void put(const void *p, size_t len) { memcpy(opbuf + n, p, len); n += len; }
 static void put_int(int32_t v) { opbuf[n++] = 0x01; put(&v, 4); }
 static void put_local(int i) { uint16_t x = (uint16_t)i; opbuf[n++] = 0x03; put(&x, 2); }
+static void put_float(float f) { opbuf[n++] = 0x06; put(&f, 4); }
 static void put_str(const char *s)
 {
     size_t len = strlen(s);
@@ -551,6 +552,104 @@ __declspec(dllexport) int run(void)
         IDirect3DDevice9_SetStreamSource(dev, 0, NULL, 0, 0);
         if (vb)
             IDirect3DVertexBuffer9_Release(vb);
+    }
+    /* SAMPFUNCS' render opcodes (sfrender.c): queued by the script, drawn
+     * in the next Present, then gone. Away from the dialog (100,120 320x260). */
+    {
+        int32_t font, tex;
+        uint32_t px;
+        DWORD fill = 0;
+        FILE *f;
+        int x, y, lit = 0;
+        /* a box */
+        begin(); put_float(700); put_float(500); put_float(40); put_float(40); put_int((int32_t)0xFFFF0000); op(0x0B69);
+        px = frame("render_box.bmp", 720, 520);
+        check((px & 0xFFFFFF) == 0xFF0000, "0B69 draws a box");
+        check((frame("render_none.bmp", 720, 520) & 0xFFFFFF) == (CLEAR & 0xFFFFFF), "and only in that frame");
+        /* a bordered box: the border a ring inside */
+        begin(); put_float(600); put_float(450); put_float(60); put_float(60); put_int((int32_t)0xFF00FF00);
+        put_float(5); put_int((int32_t)0xFF0000FF); op(0x0B6A);
+        px = frame("render_border.bmp", 602, 480);
+        check((px & 0xFFFFFF) == 0x0000FF, "0B6A the border is inside the box");
+        begin(); put_float(600); put_float(450); put_float(60); put_float(60); put_int((int32_t)0xFF00FF00);
+        put_float(5); put_int((int32_t)0xFF0000FF); op(0x0B6A);
+        check((frame("render_border.bmp", 630, 480) & 0xFFFFFF) == 0x00FF00, "with the fill in the middle");
+        /* a line 6 px thick */
+        begin(); put_float(500); put_float(560); put_float(780); put_float(560); put_float(6); put_int((int32_t)0xFFFFFF00); op(0x0B68);
+        check((frame("render_line.bmp", 640, 560) & 0xFFFFFF) == 0xFFFF00, "0B68 draws a thick line");
+        /* a polygon */
+        begin(); put_float(60); put_float(520); put_float(30); put_float(30); put_int(6); put_float(0); put_int((int32_t)0xFF00FFFF);
+        op(0x0B70);
+        check((frame("render_poly.bmp", 60, 520) & 0xFFFFFF) == 0x00FFFF, "0B70 draws a polygon around its centre");
+        /* a primitive: one triangle */
+        begin(); put_int(D3DPT_TRIANGLELIST); op(0x0C3B);
+        begin(); put_int((int32_t)0xFFFF00FF); op(0x0C3D);
+        begin(); put_float(150); put_float(440); op(0x0C3E);
+        begin(); put_float(250); put_float(440); op(0x0C3E);
+        begin(); put_float(200); put_float(520); op(0x0C3E);
+        begin(); op(0x0C3C);
+        check((frame("render_prim.bmp", 200, 470) & 0xFFFFFF) == 0xFF00FF, "0C3B-0C3E build and 0C3C draws a triangle");
+        /* a render state lasts the drawing, then the game's is back */
+        begin(); put_int(D3DRS_FILLMODE); put_int(D3DFILL_WIREFRAME); op(0x0C44);
+        begin(); put_float(700); put_float(500); put_float(40); put_float(40); put_int((int32_t)0xFFFF0000); op(0x0B69);
+        frame("render_state.bmp", 0, 0);
+        IDirect3DDevice9_GetRenderState(dev, D3DRS_FILLMODE, &fill);
+        check(fill == D3DFILL_SOLID, "0C44 a render state is put back after the frame");
+        /* a font */
+        begin(); put_str("Arial"); put_int(14); put_int(1); put_local(0); op(0x0B6D);
+        font = LOCAL(0);
+        check(font != 0, "0B6D creates a font");
+        begin(); put_int(font); put_str("{FF0000}Hello"); put_local(1); op(0x0B6B);
+        begin(); put_int(font); put_local(2); op(0x0B6C);
+        check(LOCAL(1) > 20 && LOCAL(1) < 80 && LOCAL(2) > 10 && LOCAL(2) < 40,
+              "0B6B / 0B6C its text length (colour tags not counted) and height");
+        begin(); put_int(font); put_str("Hello"); put_float(300); put_float(420); put_int((int32_t)0xFFFFFFFF); op(0x0B6F);
+        frame("render_text.bmp", 0, 0);
+        {
+            IDirect3DSurface9 *bb = NULL, *sys = NULL;
+            D3DLOCKED_RECT lr;
+            begin(); put_int(font); put_str("Hello"); put_float(300); put_float(420); put_int((int32_t)0xFFFFFFFF); op(0x0B6F);
+            IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, CLEAR, 1.0f, 0);
+            IDirect3DDevice9_Present(dev, NULL, NULL, NULL, NULL);
+            IDirect3DDevice9_GetBackBuffer(dev, 0, 0, D3DBACKBUFFER_TYPE_MONO, &bb);
+            IDirect3DDevice9_CreateOffscreenPlainSurface(dev, W, H, D3DFMT_X8R8G8B8, D3DPOOL_SYSTEMMEM, &sys, NULL);
+            if (bb && sys && SUCCEEDED(IDirect3DDevice9_GetRenderTargetData(dev, bb, sys)) &&
+                SUCCEEDED(IDirect3DSurface9_LockRect(sys, &lr, NULL, D3DLOCK_READONLY))) {
+                for (y = 420; y < 420 + LOCAL(2); y++)
+                    for (x = 300; x < 300 + LOCAL(1); x++)
+                        lit += (*(uint32_t *)((uint8_t *)lr.pBits + y * lr.Pitch + x * 4) & 0xFF) > 0xE0;
+                IDirect3DSurface9_UnlockRect(sys);
+            }
+            if (sys) IDirect3DSurface9_Release(sys);
+            if (bb) IDirect3DSurface9_Release(bb);
+        }
+        check(lit > 20, "0B6F draws the text");
+        begin(); put_int(font); op(0x0B6E);
+        check(COND == 1, "0B6E releases the font");
+        /* a texture from a file: a 4x4 green BMP */
+        f = fopen("render_tex.bmp", "wb");
+        if (f) {
+            static const uint8_t head[54] = { 'B', 'M', 54 + 64, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0, 40, 0, 0, 0,
+                                              4, 0, 0, 0, 4, 0, 0, 0, 1, 0, 32, 0 };
+            uint32_t green[16];
+            for (x = 0; x < 16; x++) green[x] = 0xFF00C000u;
+            fwrite(head, 1, sizeof head, f);
+            fwrite(green, 4, 16, f);
+            fclose(f);
+        }
+        begin(); put_str("render_tex.bmp"); put_local(3); op(0x0B71);
+        tex = LOCAL(3);
+        check(COND == 1 && tex != 0, "0B71 loads a texture from a file");
+        begin(); put_int(tex); put_local(4); put_local(5); op(0x0C43);
+        check(COND == 1 && LOCAL(4) == 4 && LOCAL(5) == 4, "0C43 its size is the image's");
+        begin(); put_int(tex); put_local(6); op(0x0C41);
+        check(COND == 1 && LOCAL(6) != 0, "0C41 its IDirect3DTexture9");
+        begin(); put_int(tex); put_float(420); put_float(420); put_float(64); put_float(64); put_float(0);
+        put_int((int32_t)0xFFFFFFFF); op(0x0B73);
+        px = frame("render_texture.bmp", 452, 452);
+        check((px & 0xFFFFFF) == 0x00C000, "0B73 draws it");
+        begin(); put_int(tex); op(0x0B72);
+        check(COND == 1, "0B72 releases it");
     }
     {
         D3DPRESENT_PARAMETERS pp = { 0 };

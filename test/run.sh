@@ -118,7 +118,7 @@ for dll in "$@"; do
     run overlay_test "$dll"
     if [ -n "${SHOTS:-}" ]; then
         mkdir -p "$SHOTS"
-        for f in overlay*.bmp; do
+        for f in overlay*.bmp render*.bmp; do
             [ -e "$f" ] && cp "$f" "$SHOTS/$(basename "$(dirname "$dll")")-$f"
         done
     fi

@@ -1,8 +1,6 @@
 /* SAMPFUNCS opcodes MoonLoader never sends but CLEO scripts do: memory,
- * arrays, strings, math, line of sight, keys and the clipboard. Every other
- * SAMPFUNCS opcode moonsamp lacks gets a stub that steps over its
- * parameters, so a script using one goes on instead of jumping through a
- * null handler (a frozen game). */
+ * arrays, strings, math, line of sight, keys and the clipboard. sfmore.c
+ * and sfrender.c have the rest. */
 #include "moonsamp.h"
 
 #define RS_GLOBAL_PS 0xC17054       /* RsGlobal.ps; its window first */
@@ -1150,60 +1148,6 @@ static int8_t __stdcall op_1337(Script *s)
     return 0;
 }
 
-/* ---- stubs for the rest -------------------------------------------------- */
-
-enum { SKIP_VARARGS = 1, SKIP_COND = 2 };
-
-/* SAMPFUNCS's opcodes moonsamp has no handler for (Sanny Builder's
- * library): parameter count, then flags. Drawing, timers, downloads, global
- * functions and threads need more than a handler. */
-static const struct { uint16_t op; uint8_t params, flags; } missing[] = {
-    { 0x0B5F, 4, 0 }, { 0x0B60, 4, 0 }, { 0x0B68, 6, 0 }, { 0x0B69, 5, 0 },
-    { 0x0B6A, 7, 0 }, { 0x0B6B, 3, 0 }, { 0x0B6C, 2, 0 }, { 0x0B6D, 4, 0 },
-    { 0x0B6E, 1, SKIP_COND }, { 0x0B6F, 5, 0 }, { 0x0B70, 7, 0 }, { 0x0B71, 2, SKIP_COND },
-    { 0x0B72, 1, SKIP_COND }, { 0x0B73, 7, 0 }, { 0x0B8F, 6, 0 },
-    { 0x0C34, 2, SKIP_COND }, { 0x0C35, 2, SKIP_VARARGS | SKIP_COND }, { 0x0C36, 1, SKIP_VARARGS | SKIP_COND },
-    { 0x0C37, 1, SKIP_COND }, { 0x0C38, 3, SKIP_COND }, { 0x0C39, 1, 0 },
-    { 0x0C3B, 1, 0 }, { 0x0C3C, 0, 0 }, { 0x0C3D, 1, 0 }, { 0x0C3E, 2, 0 },
-    { 0x0C3F, 2, 0 }, { 0x0C40, 1, SKIP_COND }, { 0x0C41, 2, SKIP_COND }, { 0x0C42, 2, SKIP_COND },
-    { 0x0C43, 3, SKIP_COND }, { 0x0C44, 2, 0 },
-    { 0x0C65, 3, 0 }, { 0x0C66, 2, SKIP_COND }, { 0x0C6A, 2, SKIP_VARARGS },
-    { 0x0C72, 2, 0 }, { 0x0C73, 2, 0 }, { 0x0C74, 3, SKIP_COND }, { 0x0C75, 1, SKIP_COND },
-    { 0x0C76, 1, SKIP_COND }, { 0x0C77, 2, SKIP_COND }, { 0x0C78, 2, SKIP_COND }, { 0x0C79, 1, SKIP_COND },
-    { 0x0C7A, 2, SKIP_COND }, { 0x0C7B, 2, SKIP_COND }, { 0x0C7C, 2, SKIP_COND }, { 0x0C7D, 1, SKIP_COND },
-    { 0x0C8C, 3, SKIP_COND },
-};
-
-static uint8_t logged[sizeof missing / sizeof missing[0]];
-
-static int8_t __stdcall op_missing(Script *s)
-{
-    uint16_t op = *(uint16_t *)(s->ip - 2) & 0x7FFF;
-    char tmp[256];
-    size_t i;
-    int k;
-    for (i = 0; i < sizeof missing / sizeof missing[0] && missing[i].op != op; i++)
-        ;
-    if (i == sizeof missing / sizeof missing[0])
-        return 0;
-    if (!logged[i]) {
-        logged[i] = 1;
-        ms_log("opcode %04X (SAMPFUNCS) is not in moonsamp: a script used it, it does nothing", op);
-    }
-    for (k = 0; k < missing[i].params; k++) {
-        uint8_t t = *s->ip;
-        if (t >= 0x01 && t <= 0x08)
-            script_collect(s, 1);
-        else
-            script_string(s, tmp, sizeof tmp);
-    }
-    if (missing[i].flags & SKIP_VARARGS)
-        script_skip_varargs(s);
-    if (missing[i].flags & SKIP_COND)
-        script_cond(s, 0);
-    return 0;
-}
-
 void sfextra_install(void)
 {
     static const struct { uint16_t op; OpcodeFn fn; } ops[] = {
@@ -1230,7 +1174,4 @@ void sfextra_install(void)
     size_t i;
     for (i = 0; i < sizeof ops / sizeof ops[0]; i++)
         script_register(ops[i].op, ops[i].fn);
-    for (i = 0; i < sizeof missing / sizeof missing[0]; i++)
-        if (!script_handler(missing[i].op))
-            script_try_register(missing[i].op, op_missing);
 }

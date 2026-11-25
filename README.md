@@ -323,11 +323,31 @@ environment, unicode, modules and the clipboard. A string argument can be a
 buffer's address or inline text; a string result goes into the buffer an
 int variable points at, or into a string variable.
 
-Drawing (0B68-0B73, 0C3B-0C44, 0C8C), timers, downloads, global functions,
-custom threads, window/game screen conversion and the virtual-key injectors
-are stubs: each steps over its parameters, is false if it is a condition,
-and logs its opcode once. Without them a script would jump through CLEO's
-empty slot to address 0 every frame.
+Every opcode in SAMPFUNCS' Sanny Builder list has a handler. The rest are
+in `src/sfmore.c`, done as SAMPFUNCS 5.7.1 does them:
+
+- **Screen** (0B5F/0B60, 0B8F): window pixels to the game's 640x448 and
+  back, and a screen point at a depth to the world.
+- **Timers** (0C74-0C7C): the label runs in the script that made the timer,
+  every interval, and ends with 0B43; the script's state is put back after.
+  A timer goes when its script ends.
+- **Global functions** (0C34-0C39): the caller runs the label itself, like a
+  gosub into the script that registered it. 0C35 puts the arguments in its
+  first locals; 0C36 returns and writes its values into the variables after
+  0C35's arguments.
+- **Downloads** (0C65, 0C66, 0C7D): the state is the last URL moniker status
+  (BINDSTATUS_*, 6 when done), -1 if it failed.
+- **Keys** (0C72/0C73): SendInput with the key's scan code.
+- **Threads** (0C6A): at a label, keeping the creator's base so the thread's
+  own labels resolve.
+
+Drawing (0B68-0B73, 0C3B-0C44, 0C8C) is `src/sfrender.c`. SAMPFUNCS draws
+when the opcode runs; here each draw is queued and the overlay replays the
+frame's queue in Present, under script dialogs and the console. Fonts are
+GDI glyph atlases sized in points; textures load through whichever d3dx9 DLL
+is there. A texture handle has SAMPFUNCS' layout (the texture at +0, width
+and height at +8 and +0xC); no D3DX sprite is made (0C42 is 0), since one
+left alive makes a device Reset fail.
 
 ## Diagnostics
 

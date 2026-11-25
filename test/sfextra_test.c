@@ -10,6 +10,7 @@
 
 typedef int (__cdecl *RunFn)(int, const char *, const int32_t *, int, int32_t *);
 typedef int8_t (__attribute__((thiscall)) *Handler)(void *, int);
+typedef struct Script Script;
 
 static int failed, passed;
 static void check(int ok, const char *what)
@@ -290,16 +291,131 @@ __declspec(dllexport) int run(void)
         check(cond == 1 && strcmp(buf, "wide") == 0, "0C68 unicode to ansi");
     }
 
-    /* a stub steps over its parameters (0C74 create_timer_interval: two
-     * ints and the variable it would set), so the next opcode lines up */
+    /* 0C43 texture size of no texture: steps over the handle and the two
+     * variables, so the next opcode lines up, and is false */
     {
         size_t n = 2;
         code[n++] = 0x01; memset(code + n, 0, 4); n += 4;     /* int32 */
-        code[n++] = 0x04; code[n++] = 0x10;                   /* int8 label */
         code[n++] = 0x03; code[n++] = 0x05; code[n++] = 0x00; /* @5 */
+        code[n++] = 0x03; code[n++] = 0x06; code[n++] = 0x00; /* @6 */
         code[n] = 0xEE;
-        dispatch(0x0C74, n);
-        check(IP == code + n && COND == 0, "a stubbed opcode (0C74) steps over its parameters and is false");
+        dispatch(0x0C43, n);
+        check(IP == code + n && COND == 0, "0C43 of no texture steps over its parameters and is false");
+    }
+
+    /* screen coordinates: window pixels <-> the game's 640x448 */
+    {
+        int32_t keep_w = *(int32_t *)0xC17044, keep_h = *(int32_t *)0xC17048;
+        float keep_view[16];
+        float *view = (float *)0xB6FA2C;
+        *(int32_t *)0xC17044 = 1280, *(int32_t *)0xC17048 = 896;
+        in[0] = 640, in[1] = 448;
+        op(0x0B5F, "iioo", 2);
+        check(close_to(fo(0), 320.0f) && close_to(fo(1), 224.0f), "0B5F window 640,448 at 1280x896 is game 320,224");
+        in[0] = fi(320.0f), in[1] = fi(224.0f);
+        op(0x0B60, "ffoo", 2);
+        check(out[0] == 640 && out[1] == 448, "0B60 converts back");
+
+        /* 0B8F: CalcScreenCoors backwards, here with a camera that only moves */
+        memcpy(keep_view, view, sizeof keep_view);
+        memset(view, 0, 64);
+        view[0] = view[5] = view[10] = 1.0f;
+        view[12] = -10.0f, view[13] = -20.0f, view[14] = -30.0f, view[15] = 1.0f;
+        *(int32_t *)0xC17044 = 640, *(int32_t *)0xC17048 = 480;
+        in[0] = 320, in[1] = 240, in[2] = fi(5.0f);
+        op(0x0B8F, "iifooo", 3);
+        check(close_to(fo(0), 12.5f) && close_to(fo(1), 22.5f) && close_to(fo(2), 35.0f),
+              "0B8F screen 320,240 at depth 5 is world 12.5,22.5,35");
+        memcpy(view, keep_view, sizeof keep_view);
+        *(int32_t *)0xC17044 = keep_w, *(int32_t *)0xC17048 = keep_h;
+    }
+
+    /* timers: made, read, changed and killed (firing needs the game) */
+    {
+        int id;
+        in[0] = 1000, in[1] = -16;
+        op(0x0C74, "iio", 1);
+        id = out[0];
+        check(cond == 1 && id > 0, "0C74 creates a timer");
+        in[0] = id;
+        op(0x0C7A, "io", 1);
+        check(cond == 1 && out[0] == 1000, "0C7A its interval");
+        op(0x0C79, "i", 0);
+        check(cond == 1, "0C79 it is active");
+        in[1] = 250;
+        op(0x0C77, "ii", 0);
+        op(0x0C7A, "io", 1);
+        check(out[0] == 250, "0C77 sets the interval");
+        op(0x0C7C, "io", 1);
+        check(cond == 1 && out[0] > 0 && out[0] <= 250, "0C7C time left is within the interval");
+        in[1] = 0;
+        op(0x0C78, "ii", 0);
+        op(0x0C79, "i", 0);
+        check(cond == 0, "0C78 pauses it");
+        op(0x0C75, "i", 0);
+        check(cond == 1, "0C75 kills it");
+        op(0x0C7A, "io", 1);
+        check(cond == 0 && out[0] == 0, "and then it is gone");
+    }
+
+    /* global functions: the caller runs the label and comes back with results */
+    {
+        static uint8_t caller[64], fn_code[64];
+        Script **active = (Script **)0xA8B42C;
+        void *keep_active = *active;
+        size_t n = 0, after_args;
+        *(void **)script = NULL;               /* next: the only active script */
+        *active = (Script *)script;
+        /* register "Add" at label -40 (offset 40 into this script) */
+        n = 2;
+        code[n++] = 0x0E; code[n++] = 3; memcpy(code + n, "Add", 3); n += 3;
+        code[n++] = 0x01; { int32_t l = -40; memcpy(code + n, &l, 4); } n += 4;
+        dispatch(0x0C34, n);
+        check(COND == 1, "0C34 registers Add");
+        n = 2;
+        code[n++] = 0x0E; code[n++] = 3; memcpy(code + n, "Add", 3); n += 3;
+        dispatch(0x0C37, n);
+        check(COND == 1, "0C37 Add is defined");
+
+        /* 0C35 call_global_func "Add" 2 7 5 -> @9 */
+        n = 0;
+        caller[n++] = 0x35; caller[n++] = 0x0C;
+        caller[n++] = 0x0E; caller[n++] = 3; memcpy(caller + n, "Add", 3); n += 3;
+        caller[n++] = 0x04; caller[n++] = 2;
+        caller[n++] = 0x04; caller[n++] = 7;
+        caller[n++] = 0x04; caller[n++] = 5;
+        after_args = n;
+        caller[n++] = 0x03; caller[n++] = 9; caller[n++] = 0;
+        caller[n++] = 0x00;
+        caller[n] = 0xEE;
+        memset(script + 0x3C, 0, 4 * 32);
+        *(int32_t *)(script + 0x3C + 4 * 20) = 99;
+        *(uint8_t **)(script + 0x10) = code;
+        IP = caller + 2;
+        ((Handler)(*(Handler **)0x469FEE)[0x0C35 / 100])(script, 0x0C35);
+        check(COND == 1 && IP == code + 40, "0C35 jumps the caller to Add's label");
+        check(*(int32_t *)(script + 0x3C) == 7 && *(int32_t *)(script + 0x40) == 5,
+              "with the arguments in its first locals");
+
+        /* 0C36 func_ret 1 12 */
+        n = 0;
+        fn_code[n++] = 0x36; fn_code[n++] = 0x0C;
+        fn_code[n++] = 0x04; fn_code[n++] = 1;
+        fn_code[n++] = 0x04; fn_code[n++] = 12;
+        fn_code[n++] = 0x00;
+        IP = fn_code + 2;
+        ((Handler)(*(Handler **)0x469FEE)[0x0C36 / 100])(script, 0x0C36);
+        check(IP == caller + after_args + 4, "0C36 returns past 0C35's results and its end marker");
+        check(*(int32_t *)(script + 0x3C + 4 * 9) == 12, "the result lands in 0C35's variable");
+        check(*(int32_t *)(script + 0x3C + 4 * 20) == 99 && *(uint8_t **)(script + 0x10) == code,
+              "and the caller's locals and base are back");
+
+        n = 2;
+        code[n++] = 0x0E; code[n++] = 3; memcpy(code + n, "Add", 3); n += 3;
+        dispatch(0x0C39, n);
+        dispatch(0x0C37, n);
+        check(COND == 0, "0C39 unregisters it");
+        *active = keep_active;
     }
 
     printf("\n%d passed, %d failed\n", passed, failed);

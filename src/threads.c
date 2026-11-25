@@ -72,6 +72,30 @@ static int8_t __stdcall op_0C6B(Script *s)
     return 0;
 }
 
+/* 0C6A %2d% = create_custom_thread_at_label %1d% args...: the new thread
+ * keeps the creator's base, so its own labels still resolve */
+static int8_t __stdcall op_0C6A(Script *s)
+{
+    int32_t label = script_int(s);
+    uint8_t *ip = s->base_ip - label;
+    Script *t = NULL;
+    int i;
+    for (i = 0; i < MAX_THREADS && custom[i].script; i++)
+        ;
+    if (label && IDLE_SCRIPTS && i < MAX_THREADS) {
+        t = StartNewScript(ip);
+        start_at(t, ip);
+        t->base_ip = s->base_ip;
+        lstrcpynA(t->name, "custom", sizeof t->name);
+        custom[i].script = t;
+        custom[i].dying = 0;
+    }
+    ScriptParams[0].p = t;
+    script_store(s, 1);
+    read_args(s, t);
+    return 0;
+}
+
 /* 0C6F restart_custom_thread %1d% args... */
 static int8_t __stdcall op_0C6F(Script *s)
 {
@@ -186,7 +210,7 @@ void threads_tick(void)
 void threads_install(void)
 {
     static const struct { uint16_t op; OpcodeFn fn; } ops[] = {
-        { 0x0C6B, op_0C6B }, { 0x0C6F, op_0C6F }, { 0x0C6E, op_0C6E }, { 0x0C6C, op_0C6C },
+        { 0x0C6A, op_0C6A }, { 0x0C6B, op_0C6B }, { 0x0C6F, op_0C6F }, { 0x0C6E, op_0C6E }, { 0x0C6C, op_0C6C },
         { 0x0C6D, op_0C6D }, { 0x0BDE, op_0BDE }, { 0x0BDF, op_0BDF },
     };
     size_t i;

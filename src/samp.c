@@ -589,6 +589,8 @@ void samp_tick(void)
 {
     ml_follow_script_space();
     threads_tick();
+    sfmore_tick();
+    sfrender_tick();
     cleo5_tick();
     cleoplus_tick();
     draw_tick();
@@ -1366,6 +1368,8 @@ int samp_install(void)
     threads_install();
     console_install();
     dxut_install();
-    sfextra_install();    /* last: its stubs fill only the gaps */
+    sfmore_install();
+    sfrender_install();
+    sfextra_install();
     return 1;
 }

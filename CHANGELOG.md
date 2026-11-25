@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.0
+
+**Added**
+
+- Every SAMPFUNCS opcode for CLEO scripts. The ones that were stubs now work
+  as SAMPFUNCS 5.7.1 does them: drawing (lines, boxes, polygons, fonts and
+  text, textures, raw primitives, render states), timers, global functions,
+  downloads, emulated key presses, window/game screen conversion, screen to
+  world, and threads at a label.
+
 ## 0.11.8
 
 **Fixed**

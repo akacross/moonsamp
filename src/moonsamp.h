@@ -138,6 +138,17 @@ void draw_tick(void);
 /* sfextra.c */
 void sfextra_install(void);
 
+/* sfrender.c: SAMPFUNCS' render opcodes, drawn by the overlay */
+struct IDirect3DDevice9;
+int sfrender_pending(void);
+void sfrender_render(struct IDirect3DDevice9 *d);
+void sfrender_install(void);
+void sfrender_tick(void);
+
+/* sfmore.c */
+void sfmore_install(void);
+void sfmore_tick(void);
+
 /* cleoplus.c */
 void cleoplus_install(void);
 void cleoplus_tick(void);

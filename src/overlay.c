@@ -45,6 +45,7 @@ static LPARAM held[256];                /* key-down lParams the game saw, 0 if u
 static UINT held_up[256];
 
 int overlay_width(void) { return width; }
+IDirect3DDevice9 *overlay_device(void) { return dev; }
 int overlay_height(void) { return height; }
 
 /* Creates the fonts and places their glyphs; returns the rows used. */
@@ -458,7 +459,7 @@ static void frame(void)
 {
     if (!width)
         read_size();
-    if (!width || !(dxut_visible() || console_visible()))
+    if (!width || !(dxut_visible() || console_visible() || sfrender_pending()))
         return;
     /* Only what the overlay sets is saved and put back, and stream 0, which
      * DrawPrimitiveUP clears and RenderWare caches. */
@@ -474,6 +475,10 @@ static void frame(void)
     }
     IDirect3DStateBlock9_Capture(saved);
     if (SUCCEEDED(IDirect3DDevice9_BeginScene(dev))) {
+        if (sfrender_pending()) {
+            set_states();       /* not the game's: its cull mode drops half the shapes */
+            sfrender_render(dev);   /* scripts' drawing, under dialogs and the console */
+        }
         states_ready = 0;
         dxut_render();
         console_render();
